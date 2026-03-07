@@ -14,3 +14,6 @@ export { useDarkMode } from './hooks/useDarkMode'
 // UI
 export { Badge, badgeVariants } from './components/ui/badge'
 export type { BadgeProps } from './components/ui/badge'
+
+// Utilities
+export { cn } from './lib/utils'
