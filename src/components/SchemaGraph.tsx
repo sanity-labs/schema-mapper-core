@@ -617,6 +617,7 @@ function GraphControls({
 // ---------------------------------------------------------------------------
 
 function SchemaGraphInner({ types, initialPositions, initialEdgeStyle }: { types: DiscoveredType[]; initialPositions?: Record<string, { x: number; y: number }>; initialEdgeStyle?: EdgeStyle }) {
+  console.log('[SchemaGraph] initialPositions:', initialPositions ? Object.keys(initialPositions).length + ' nodes' : 'NONE', 'initialEdgeStyle:', initialEdgeStyle)
   const isDark = useDarkMode()
   const { fitView } = useReactFlow()
   const nodesInitialized = useNodesInitialized()
