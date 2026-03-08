@@ -616,7 +616,7 @@ function GraphControls({
 // Inner component (needs ReactFlowProvider ancestor for hooks)
 // ---------------------------------------------------------------------------
 
-function SchemaGraphInner({ types, initialPositions }: { types: DiscoveredType[]; initialPositions?: Record<string, { x: number; y: number }> }) {
+function SchemaGraphInner({ types, initialPositions, initialEdgeStyle }: { types: DiscoveredType[]; initialPositions?: Record<string, { x: number; y: number }>; initialEdgeStyle?: EdgeStyle }) {
   const isDark = useDarkMode()
   const { fitView } = useReactFlow()
   const nodesInitialized = useNodesInitialized()
@@ -678,6 +678,7 @@ function SchemaGraphInner({ types, initialPositions }: { types: DiscoveredType[]
   })
   const [isLayouting, setIsLayouting] = useState(false)
   const [edgeStyle, setEdgeStyle] = useState<EdgeStyle>(() => {
+    if (initialEdgeStyle) return initialEdgeStyle
     try {
       const saved = localStorage.getItem('schema-mapper:edgeStyle')
       if (saved && ['bezier', 'step', 'straight'].includes(saved)) return saved as EdgeStyle
@@ -857,9 +858,10 @@ function SchemaGraphInner({ types, initialPositions }: { types: DiscoveredType[]
 export interface SchemaGraphProps {
   types: DiscoveredType[]
   initialPositions?: Record<string, { x: number; y: number }>
+  initialEdgeStyle?: 'bezier' | 'step' | 'straight'
 }
 
-export function SchemaGraph({ types, initialPositions }: SchemaGraphProps) {
+export function SchemaGraph({ types, initialPositions, initialEdgeStyle }: SchemaGraphProps) {
   if (types.length === 0) {
     return (
       <div className="flex items-center justify-center w-full h-full text-gray-400 text-sm">
@@ -871,7 +873,7 @@ export function SchemaGraph({ types, initialPositions }: SchemaGraphProps) {
   return (
     <div style={{ width: '100%', height: '100%', minHeight: 500 }}>
       <ReactFlowProvider>
-        <SchemaGraphInner types={types} initialPositions={initialPositions} />
+        <SchemaGraphInner types={types} initialPositions={initialPositions} initialEdgeStyle={initialEdgeStyle} />
       </ReactFlowProvider>
     </div>
   )
