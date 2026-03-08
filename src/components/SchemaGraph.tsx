@@ -122,7 +122,7 @@ function getLayoutConfig(type: LayoutType, s: number): Record<string, string> {
 }
 
 const layoutLabels: Record<LayoutType, string> = {
-  original: 'Original',
+  original: 'Submitted',
   dagre: 'Dagre',
   layered: 'Layered',
   force: 'Force',
@@ -791,7 +791,7 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle }: { types
     debouncedApplyLayout.cancel()
     setLayoutType(newLayout)
     try { localStorage.setItem('schema-mapper:layoutType', newLayout) } catch {}
-    // Restore customer's edge style when switching to Original
+    // Restore customer's edge style when switching to Submitted
     if (newLayout === 'original' && initialEdgeStyle) {
       setEdgeStyle(initialEdgeStyle)
     }
