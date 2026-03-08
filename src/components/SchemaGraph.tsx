@@ -617,7 +617,6 @@ function GraphControls({
 // ---------------------------------------------------------------------------
 
 function SchemaGraphInner({ types, initialPositions, initialEdgeStyle }: { types: DiscoveredType[]; initialPositions?: Record<string, { x: number; y: number }>; initialEdgeStyle?: EdgeStyle }) {
-  console.log('[SchemaGraph] initialPositions:', initialPositions ? Object.keys(initialPositions).length + ' nodes' : 'NONE', 'initialEdgeStyle:', initialEdgeStyle)
   const isDark = useDarkMode()
   const { fitView } = useReactFlow()
   const nodesInitialized = useNodesInitialized()
@@ -792,8 +791,12 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle }: { types
     debouncedApplyLayout.cancel()
     setLayoutType(newLayout)
     try { localStorage.setItem('schema-mapper:layoutType', newLayout) } catch {}
+    // Restore customer's edge style when switching to Original
+    if (newLayout === 'original' && initialEdgeStyle) {
+      setEdgeStyle(initialEdgeStyle)
+    }
     applyLayout(nodes as SchemaNode_RF[], edges, newLayout, spacingMap[newLayout])
-  }, [nodes, edges, spacingMap, applyLayout, debouncedApplyLayout])
+  }, [nodes, edges, spacingMap, applyLayout, debouncedApplyLayout, initialEdgeStyle, setEdgeStyle])
 
   const handleSpacingChange = useCallback((value: number) => {
     setSpacingMap(prev => {
