@@ -49,7 +49,7 @@ function debounce<T extends (...args: any[]) => any>(fn: T, ms: number): T & { c
 type SchemaNode_RF = Node<SchemaNodeData, 'schema'>
 type SchemaEdge = Edge
 
-type LayoutType = 'dagre' | 'layered' | 'force' | 'stress'
+type LayoutType = 'original' | 'dagre' | 'layered' | 'force' | 'stress'
 type EdgeStyle = 'bezier' | 'step' | 'straight'
 
 // ---------------------------------------------------------------------------
@@ -66,6 +66,7 @@ const edgeTypes: EdgeTypes = {
 
 // Per-layout spacing multipliers — read by layout functions
 const DEFAULT_SPACING: Record<LayoutType, number> = {
+  original: 1,
   dagre: 0.8,
   layered: 0.3,
   force: 0.2,
@@ -121,6 +122,7 @@ function getLayoutConfig(type: LayoutType, s: number): Record<string, string> {
 }
 
 const layoutLabels: Record<LayoutType, string> = {
+  original: 'Original',
   dagre: 'Dagre',
   layered: 'Layered',
   force: 'Force',
@@ -544,6 +546,7 @@ function GraphControls({
   spacing,
   onSpacingChange,
   onResetSpacing,
+  hasOriginalPositions = false,
 }: {
   layout: LayoutType
   onLayoutChange: (layout: LayoutType) => void
@@ -552,8 +555,11 @@ function GraphControls({
   spacing: number
   onSpacingChange: (value: number) => void
   onResetSpacing: () => void
+  hasOriginalPositions?: boolean
 }) {
-  const layouts: LayoutType[] = ['dagre', 'layered', 'force', 'stress']
+  const layouts: LayoutType[] = hasOriginalPositions
+    ? ['original', 'dagre', 'layered', 'force', 'stress']
+    : ['dagre', 'layered', 'force', 'stress']
   const edgeStyles: EdgeStyle[] = ['bezier', 'step', 'straight']
 
   return (
@@ -580,6 +586,7 @@ function GraphControls({
           />
         ))}
       </div>
+      {layout !== 'original' && (
       <div className="flex items-center gap-3 px-1">
         <div className="flex items-center gap-2">
           <span className="text-xs text-gray-500 dark:text-gray-400">Spacing</span>
@@ -600,6 +607,7 @@ function GraphControls({
           </button>
         </div>
       </div>
+      )}
     </div>
   )
 }
@@ -608,7 +616,7 @@ function GraphControls({
 // Inner component (needs ReactFlowProvider ancestor for hooks)
 // ---------------------------------------------------------------------------
 
-function SchemaGraphInner({ types }: { types: DiscoveredType[] }) {
+function SchemaGraphInner({ types, initialPositions }: { types: DiscoveredType[]; initialPositions?: Record<string, { x: number; y: number }> }) {
   const isDark = useDarkMode()
   const { fitView } = useReactFlow()
   const nodesInitialized = useNodesInitialized()
@@ -658,9 +666,11 @@ function SchemaGraphInner({ types }: { types: DiscoveredType[] }) {
   }, [])
   const [layoutApplied, setLayoutApplied] = useState(false)
   const [layoutType, setLayoutType] = useState<LayoutType>(() => {
+    // Default to 'original' if positions were provided
+    if (initialPositions && Object.keys(initialPositions).length > 0) return 'original'
     try {
       const saved = localStorage.getItem('schema-mapper:layoutType')
-      if (saved && ['dagre', 'layered', 'force', 'stress'].includes(saved)) {
+      if (saved && ['original', 'dagre', 'layered', 'force', 'stress'].includes(saved)) {
         return saved as LayoutType
       }
     } catch {}
@@ -729,7 +739,13 @@ function SchemaGraphInner({ types }: { types: DiscoveredType[] }) {
     setIsLayouting(true)
     try {
       let layoutedNodes: SchemaNode_RF[]
-      if (layout === 'dagre') {
+      if (layout === 'original' && initialPositions && Object.keys(initialPositions).length > 0) {
+        // Restore customer's original node positions
+        layoutedNodes = currentNodes.map(n => ({
+          ...n,
+          position: initialPositions[n.id] || n.position,
+        }))
+      } else if (layout === 'dagre') {
         const result = getDagreLayout(currentNodes, currentEdges, currentSpacing)
         layoutedNodes = result.nodes
       } else {
@@ -747,7 +763,7 @@ function SchemaGraphInner({ types }: { types: DiscoveredType[] }) {
     } finally {
       setIsLayouting(false)
     }
-  }, [setNodes, fitView])
+  }, [setNodes, fitView, initialPositions])
 
   const debouncedApplyLayout = useMemo(
     () => debounce(
@@ -793,7 +809,7 @@ function SchemaGraphInner({ types }: { types: DiscoveredType[] }) {
 
   return (
     <div ref={containerRef} className="relative w-full h-full">
-      <GraphControls layout={layoutType} onLayoutChange={handleLayoutChange} edgeStyle={edgeStyle} onEdgeStyleChange={handleEdgeStyleChange} spacing={spacing} onSpacingChange={handleSpacingChange} onResetSpacing={handleResetSpacing} />
+      <GraphControls layout={layoutType} onLayoutChange={handleLayoutChange} edgeStyle={edgeStyle} onEdgeStyleChange={handleEdgeStyleChange} spacing={spacing} onSpacingChange={handleSpacingChange} onResetSpacing={handleResetSpacing} hasOriginalPositions={!!initialPositions && Object.keys(initialPositions).length > 0} />
       {isLayouting && (
         <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10 bg-white/90 dark:bg-gray-900/90 backdrop-blur-sm border rounded-md px-3 py-1 text-xs text-gray-500 dark:text-gray-400">
           Layouting…
@@ -840,9 +856,10 @@ function SchemaGraphInner({ types }: { types: DiscoveredType[] }) {
 
 export interface SchemaGraphProps {
   types: DiscoveredType[]
+  initialPositions?: Record<string, { x: number; y: number }>
 }
 
-export function SchemaGraph({ types }: SchemaGraphProps) {
+export function SchemaGraph({ types, initialPositions }: SchemaGraphProps) {
   if (types.length === 0) {
     return (
       <div className="flex items-center justify-center w-full h-full text-gray-400 text-sm">
@@ -854,7 +871,7 @@ export function SchemaGraph({ types }: SchemaGraphProps) {
   return (
     <div style={{ width: '100%', height: '100%', minHeight: 500 }}>
       <ReactFlowProvider>
-        <SchemaGraphInner types={types} />
+        <SchemaGraphInner types={types} initialPositions={initialPositions} />
       </ReactFlowProvider>
     </div>
   )
