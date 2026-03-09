@@ -388,5 +388,6 @@ export function SchemaCodeDialog({open, onClose, types, projectName, datasetName
             </Flex>
           </Stack>
       </InfoDialog>
+    </>
   )
 }
