@@ -135,9 +135,10 @@ function generateFullFile(types: DiscoveredType[]): string {
 /** Collect all type names that are referenced by other types */
 function getReferencedTypeNames(types: DiscoveredType[]): Set<string> {
   const referenced = new Set<string>()
+  const typeNames = new Set(types.map((t) => t.name))
   for (const type of types) {
     for (const field of type.fields) {
-      if (field.referenceTo) {
+      if (field.isReference && field.referenceTo && typeNames.has(field.referenceTo)) {
         referenced.add(field.referenceTo)
       }
     }
@@ -303,7 +304,7 @@ export function SchemaCodeDialog({open, onClose, types, projectName, datasetName
         width={2}
         animate
       >
-        <Box padding={4} paddingTop={0}>
+        <Box padding={4}>
           <Stack space={4}>
             <Text size={1} muted>
               These Sanity schema definitions are generated from <strong>{schemaSource}</strong>. They
