@@ -298,7 +298,7 @@ export function SchemaCodeDialog({open, onClose, types, projectName, datasetName
           text-decoration-color: #6ad8c2;
         }
       `}</style>
-      <div className="fixed inset-0 z-[99] backdrop-blur-[2px]" />
+      <div className="fixed inset-0 z-[99] backdrop-blur-[2px]" onClick={onClose} />
       <Dialog
         id="schema-code-dialog"
         header={<span className="text-xl font-normal">Schema Definitions</span>}
