@@ -306,9 +306,10 @@ export function SchemaCodeDialog({open, onClose, types, projectName, datasetName
         <Box padding={4} paddingTop={0}>
           <Stack space={4}>
             <Text size={1} muted>
-              Generated Sanity schema definitions from <strong>{schemaSource}</strong>. These can be
-              pasted into a Studio project&apos;s schema directory. References between types are
-              linked — click a reference to jump to that type&apos;s definition.
+              These Sanity schema definitions are generated from <strong>{schemaSource}</strong>. They
+              are simplified and may not precisely match your codebase, as custom inputs, validation,
+              conditional fields, and fieldsets are not included. Paste them into a Studio
+              project&apos;s schema folder for testing.
             </Text>
 
             <Flex gap={3} style={{height: 'calc(80vh - 160px)', minHeight: 400}}>
