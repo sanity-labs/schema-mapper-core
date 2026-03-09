@@ -307,8 +307,8 @@ export function SchemaCodeDialog({open, onClose, types, projectName, datasetName
           <Stack space={4}>
             <Text size={1} muted>
               These Sanity schema definitions are generated from <strong>{schemaSource}</strong>. They
-              are simplified and may not precisely match your codebase, as custom inputs, validation,
-              conditional fields, and fieldsets are not included. Paste them into a Studio
+              are simplified and may not precisely match your codebase, as features like custom inputs,
+              validation, conditional fields, and fieldsets are not included. Paste them into a Studio
               project&apos;s schema folder for testing.
             </Text>
 
