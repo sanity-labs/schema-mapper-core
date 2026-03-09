@@ -1,5 +1,5 @@
 import {useState, useMemo, useCallback} from 'react'
-import {Stack, Text, Flex, Button} from '@sanity/ui'
+import {Stack, Text, Flex, Button, Tooltip, Box} from '@sanity/ui'
 import {InfoDialog} from './InfoDialog'
 import { HiOutlineLink } from 'react-icons/hi'
 import { GrDownload } from 'react-icons/gr'
@@ -149,6 +149,24 @@ function getReferencedTypeNames(types: DiscoveredType[]): Set<string> {
   return referenced
 }
 
+/** Build reverse map: for each type, which other types reference it */
+function getReferencedByMap(types: DiscoveredType[]): Map<string, string[]> {
+  const refBy = new Map<string, string[]>()
+  const typeNames = new Set(types.map((t) => t.name))
+  for (const type of types) {
+    for (const field of type.fields) {
+      if (field.isReference && field.referenceTo && typeNames.has(field.referenceTo)) {
+        const existing = refBy.get(field.referenceTo) || []
+        if (!existing.includes(type.name)) {
+          existing.push(type.name)
+          refBy.set(field.referenceTo, existing)
+        }
+      }
+    }
+  }
+  return refBy
+}
+
 // ---- Syntax highlighting helpers ----
 
 type CodeSegment = {
@@ -235,6 +253,7 @@ export function SchemaCodeDialog({open, onClose, types, projectName, datasetName
   const [selectedType, setSelectedType] = useState<string>(types[0]?.name ?? '')
 
   const referencedTypeNames = useMemo(() => getReferencedTypeNames(types), [types])
+  const referencedByMap = useMemo(() => getReferencedByMap(types), [types])
   const allTypeNames = useMemo(() => new Set(types.map((t) => t.name)), [types])
 
   const selectedTypeData = useMemo(
@@ -330,11 +349,26 @@ export function SchemaCodeDialog({open, onClose, types, projectName, datasetName
                             </div>
                           </div>
                           {isReferenced && (
-                            <HiOutlineLink
-                              className="flex-shrink-0 text-blue-400"
-                              title="Referenced by other types"
-                              size={12}
-                            />
+                            <Tooltip
+                              content={
+                                <Box padding={2}>
+                                  <Text size={1}>
+                                    Referenced in{' '}
+                                    {(referencedByMap.get(type.name) || []).map((name, i, arr) => (
+                                      <span key={name}>
+                                        {i > 0 && (i === arr.length - 1 ? ' and ' : ', ')}
+                                        <span style={{fontWeight: 600}}>{name}</span>
+                                      </span>
+                                    ))}
+                                  </Text>
+                                </Box>
+                              }
+                              placement="right"
+                            >
+                              <span className="flex-shrink-0 text-blue-400 cursor-help">
+                                <HiOutlineLink size={12} />
+                              </span>
+                            </Tooltip>
                           )}
                         </div>
                       </button>
