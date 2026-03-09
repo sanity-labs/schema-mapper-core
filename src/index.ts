@@ -9,6 +9,9 @@ export { default as FloatingEdge } from './components/FloatingEdge'
 export { ExportDropdown } from './components/ExportDropdown'
 export type { ExportContext, ExportMenuItem } from './components/ExportDropdown'
 
+// InfoDialog
+export { InfoDialog } from './components/InfoDialog'
+
 // SchemaCodeDialog
 export { SchemaCodeDialog } from './components/SchemaCodeDialog'
 

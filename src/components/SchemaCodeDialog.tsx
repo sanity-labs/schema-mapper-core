@@ -1,5 +1,6 @@
 import {useState, useMemo, useCallback} from 'react'
-import {Dialog, Box, Stack, Text, Flex, Button} from '@sanity/ui'
+import {Stack, Text, Flex, Button} from '@sanity/ui'
+import {InfoDialog} from './InfoDialog'
 import { HiOutlineLink } from 'react-icons/hi'
 import { GrDownload } from 'react-icons/gr'
 import type {DiscoveredType, DiscoveredField} from '../types'
@@ -275,8 +276,6 @@ export function SchemaCodeDialog({open, onClose, types, projectName, datasetName
     URL.revokeObjectURL(url)
   }, [types, projectName, datasetName])
 
-  if (!open) return null
-
   return (
     <>
       <style>{`
@@ -298,16 +297,7 @@ export function SchemaCodeDialog({open, onClose, types, projectName, datasetName
           text-decoration-color: #6ad8c2;
         }
       `}</style>
-      <div className="fixed inset-0 z-[99] backdrop-blur-[2px]" onClick={onClose} />
-      <Dialog
-        id="schema-code-dialog"
-        header={<span className="text-xl font-normal">Schema code</span>}
-        onClose={onClose}
-        onClickOutside={onClose}
-        width={2}
-        animate
-      >
-        <Box padding={4}>
+      <InfoDialog open={open} onClose={onClose} title="Schema code" width={2}>
           <Stack space={4}>
             <Text size={1} muted>
               These Sanity schema definitions are generated from <strong>{schemaSource}</strong>. Paste
@@ -397,8 +387,6 @@ export function SchemaCodeDialog({open, onClose, types, projectName, datasetName
               />
             </Flex>
           </Stack>
-        </Box>
-      </Dialog>
-    </>
+      </InfoDialog>
   )
 }
