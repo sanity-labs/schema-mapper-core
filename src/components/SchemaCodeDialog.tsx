@@ -301,7 +301,7 @@ export function SchemaCodeDialog({open, onClose, types, projectName, datasetName
       <div className="fixed inset-0 z-[99] backdrop-blur-[2px]" onClick={onClose} />
       <Dialog
         id="schema-code-dialog"
-        header={<span className="text-xl font-normal">Schema Definitions</span>}
+        header={<span className="text-xl font-normal">Schema code</span>}
         onClose={onClose}
         width={2}
         animate
@@ -309,10 +309,9 @@ export function SchemaCodeDialog({open, onClose, types, projectName, datasetName
         <Box padding={4}>
           <Stack space={4}>
             <Text size={1} muted>
-              These Sanity schema definitions are generated from <strong>{schemaSource}</strong>. They
-              are simplified and may not precisely match your codebase, as features like custom inputs,
-              validation, conditional fields, and fieldsets are not included. Paste them into a Studio
-              project&apos;s schema folder for testing.
+              These Sanity schema definitions are generated from <strong>{schemaSource}</strong>. Paste
+              them into a Studio project&apos;s schema folder for testing. Features like custom inputs,
+              validation, conditional fields, and fieldsets are not included.
             </Text>
 
             <Flex gap={3} style={{height: 'calc(80vh - 160px)', minHeight: 400}}>
