@@ -303,6 +303,7 @@ export function SchemaCodeDialog({open, onClose, types, projectName, datasetName
         id="schema-code-dialog"
         header={<span className="text-xl font-normal">Schema code</span>}
         onClose={onClose}
+        onClickOutside={onClose}
         width={2}
         animate
       >
