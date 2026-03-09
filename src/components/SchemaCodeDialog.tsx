@@ -1,5 +1,6 @@
 import {useState, useMemo, useCallback} from 'react'
 import {Dialog, Box, Stack, Text, Flex, Button} from '@sanity/ui'
+import { HiOutlineLink } from 'react-icons/hi'
 import type {DiscoveredType, DiscoveredField} from '../types'
 
 export interface SchemaCodeDialogProps {
@@ -338,9 +339,10 @@ export function SchemaCodeDialog({open, onClose, types, projectName, datasetName
                             </div>
                           </div>
                           {isReferenced && (
-                            <span
-                              className="flex-shrink-0 w-1.5 h-1.5 rounded-full bg-blue-400"
+                            <HiOutlineLink
+                              className="flex-shrink-0 text-blue-400"
                               title="Referenced by other types"
+                              size={12}
                             />
                           )}
                         </div>
