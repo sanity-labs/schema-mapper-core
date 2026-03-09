@@ -297,7 +297,7 @@ export function SchemaCodeDialog({open, onClose, types, projectName, datasetName
           text-decoration-color: #6ad8c2;
         }
       `}</style>
-      <InfoDialog open={open} onClose={onClose} title="Schema code" width={2}>
+      <InfoDialog open={open} onClose={onClose} title="Schema Code" width={2}>
           <Stack space={4}>
             <Text size={1} muted>
               These Sanity schema definitions are generated from <strong>{schemaSource}</strong>. Paste
