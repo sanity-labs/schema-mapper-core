@@ -499,13 +499,25 @@ export function ExportDropdown({ graphRef, context, types, onExport, extraMenuIt
           {extraMenuItems?.map(item => (
             <React.Fragment key={item.key}>
               {item.dividerBefore && <div className="my-1 border-t border-gray-100 dark:border-gray-700" />}
-              <button
-                onClick={item.onClick}
-                disabled={item.disabled}
-                className={item.className || "w-full text-left px-3 py-1.5 text-xs text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50"}
-              >
-                {item.label}
-              </button>
+              {item.className ? (
+                <div className="px-2 py-1.5">
+                  <button
+                    onClick={item.onClick}
+                    disabled={item.disabled}
+                    className={item.className}
+                  >
+                    {item.label}
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={item.onClick}
+                  disabled={item.disabled}
+                  className="w-full text-left px-3 py-1.5 text-xs text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50"
+                >
+                  {item.label}
+                </button>
+              )}
             </React.Fragment>
           ))}
         </div>
