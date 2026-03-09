@@ -1,6 +1,7 @@
 import {useState, useMemo, useCallback} from 'react'
 import {Dialog, Box, Stack, Text, Flex, Button} from '@sanity/ui'
 import { HiOutlineLink } from 'react-icons/hi'
+import { GrDownload } from 'react-icons/gr'
 import type {DiscoveredType, DiscoveredField} from '../types'
 
 export interface SchemaCodeDialogProps {
@@ -389,6 +390,7 @@ export function SchemaCodeDialog({open, onClose, types, projectName, datasetName
 
             <Flex justify="flex-end">
               <Button
+                icon={GrDownload}
                 text={`Download All (${types.length} types)`}
                 tone="primary"
                 onClick={handleDownload}
