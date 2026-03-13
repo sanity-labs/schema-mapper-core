@@ -1108,8 +1108,15 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle }: { types
 
   // Focus mode handlers
   const handleFocus = useCallback((typeName: string, depth: 1 | 2) => {
-    // Save current state if not already focused
-    if (!focusState) {
+    // If searching, clear search and rebuild full graph first so pre-focus state is the full graph
+    if (searchQuery.trim()) {
+      setSearchQuery('')
+      searchLayoutOverrideRef.current = null
+      const { nodes: fullNodes, edges: fullEdges } = buildNodesAndEdges(types, edgeStyleRef.current)
+      preFocusNodesRef.current = fullNodes
+      preFocusEdgesRef.current = fullEdges as SchemaEdge[]
+    } else if (!focusState) {
+      // Save current state if not already focused
       preFocusNodesRef.current = nodes as SchemaNode_RF[]
       preFocusEdgesRef.current = edges as SchemaEdge[]
     }
@@ -1126,9 +1133,9 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle }: { types
     setNodes(subsetNodes)
     setEdges(subsetEdges)
 
-    // Re-layout the subset (wait for nodes to be measured)
+    // Re-layout the subset with user's layout (not search override)
     setLayoutApplied(false)
-  }, [types, nodes, edges, focusState, setNodes, setEdges])
+  }, [types, nodes, edges, focusState, searchQuery, setNodes, setEdges])
 
   const handleExitFocus = useCallback(() => {
     // Clear cached focus for current types
