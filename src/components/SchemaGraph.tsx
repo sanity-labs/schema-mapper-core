@@ -523,7 +523,7 @@ function NodeContextMenu({ x, y, typeName, onFocus, onExpand, onClose }: {
         className="w-full text-left px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-2"
         onClick={() => { onExpand(); onClose() }}
       >
-        <TbArrowsMaximize className="text-purple-500" /> 2-hop
+        <TbArrowsMaximize className="text-purple-500" /> Expand
       </button>
     </div>
   )
@@ -537,7 +537,7 @@ function FocusBar({ typeName, depth, connectedCount, onClose, onToggleDepth }: {
     <div className="absolute top-3 left-3 z-20 bg-white/90 dark:bg-gray-900/90 backdrop-blur-sm border border-gray-200 dark:border-gray-700 rounded-lg px-4 py-2 flex items-center gap-3 shadow-sm">
       <span className="text-sm text-gray-600 dark:text-gray-300">
         Focused on <span className="font-medium text-gray-900 dark:text-gray-100">{typeName}</span>
-        <span className="text-gray-400 dark:text-gray-500 ml-1">— {connectedCount} connected type{connectedCount !== 1 ? 's' : ''}</span>
+        <span className="text-gray-400 dark:text-gray-500 ml-1">({depth === 1 ? '1-hop' : '2-hop'}) — {connectedCount} connected type{connectedCount !== 1 ? 's' : ''}</span>
       </span>
       <Button
         mode="ghost"
@@ -545,7 +545,7 @@ function FocusBar({ typeName, depth, connectedCount, onClose, onToggleDepth }: {
         fontSize={1}
         padding={2}
         onClick={onToggleDepth}
-        text={depth === 1 ? '2-hop' : 'Focus'}
+        text={depth === 1 ? 'Expand' : 'Focus'}
         iconRight={depth === 1 ? BsArrowsAngleExpand : BsArrowsAngleContract}
       />
       <button
