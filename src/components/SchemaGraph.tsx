@@ -21,9 +21,10 @@ import ELK from 'elkjs/lib/elk.bundled.js'
 import dagre from '@dagrejs/dagre'
 import '@xyflow/react/dist/style.css'
 
-import { Tab } from '@sanity/ui'
+import { Tab, Button } from '@sanity/ui'
 import { RxReset } from 'react-icons/rx'
 import { TbFocus2, TbArrowsMaximize } from 'react-icons/tb'
+import { GoChevronLeft, GoChevronRight } from 'react-icons/go'
 import { useDarkMode } from '../hooks/useDarkMode'
 import SchemaNode, { SCHEMA_NODE_TYPE, type SchemaNodeData } from './SchemaNode'
 import FloatingEdge from './FloatingEdge'
@@ -522,7 +523,7 @@ function NodeContextMenu({ x, y, typeName, onFocus, onExpand, onClose }: {
         className="w-full text-left px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-2"
         onClick={() => { onExpand(); onClose() }}
       >
-        <TbArrowsMaximize className="text-purple-500" /> Expand
+        <TbArrowsMaximize className="text-purple-500" /> 2-hop
       </button>
     </div>
   )
@@ -538,12 +539,16 @@ function FocusBar({ typeName, depth, connectedCount, onClose, onToggleDepth }: {
         Focused on <span className="font-medium text-gray-900 dark:text-gray-100">{typeName}</span>
         <span className="text-gray-400 dark:text-gray-500 ml-1">— {connectedCount} connected type{connectedCount !== 1 ? 's' : ''}</span>
       </span>
-      <button
+      <Button
+        mode="ghost"
+        tone={depth === 1 ? 'primary' : 'default'}
+        fontSize={1}
+        padding={2}
         onClick={onToggleDepth}
-        className="text-xs px-2 py-0.5 rounded-full border border-gray-300 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"
-      >
-        {depth === 1 ? 'Expand' : 'Focus'}
-      </button>
+        text={depth === 1 ? '2-hop' : 'Focus'}
+        icon={depth === 1 ? undefined : GoChevronLeft}
+        iconRight={depth === 1 ? GoChevronRight : undefined}
+      />
       <button
         onClick={onClose}
         className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
