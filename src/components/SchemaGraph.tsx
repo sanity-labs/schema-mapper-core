@@ -530,8 +530,8 @@ function NodeContextMenu({ x, y, typeName, onFocus, onExpand, onClose }: {
   )
 }
 
-function FocusBar({ typeName, depth, connectedCount, canExpand, canGoBack, onClose, onToggleDepth, onBack }: {
-  typeName: string; depth: 1 | 2; connectedCount: number; canExpand: boolean; canGoBack: boolean
+function FocusBar({ typeName, depth, connectedCount, canExpand, canGoBack, backTypeName, onClose, onToggleDepth, onBack }: {
+  typeName: string; depth: 1 | 2; connectedCount: number; canExpand: boolean; canGoBack: boolean; backTypeName?: string
   onClose: () => void; onToggleDepth: () => void; onBack: () => void
 }) {
   return (
@@ -540,7 +540,7 @@ function FocusBar({ typeName, depth, connectedCount, canExpand, canGoBack, onClo
         <button
           onClick={onBack}
           className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 -ml-1"
-          title="Go back"
+          title={backTypeName ? `Back to ${backTypeName}` : 'Go back'}
         >
           <GoArrowLeft className="w-4 h-4" />
         </button>
@@ -1274,6 +1274,7 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
           connectedCount={nodes.length - 1}
           canExpand={getNeighbourhood(types, focusState.typeName, 2).size > getNeighbourhood(types, focusState.typeName, 1).size}
           canGoBack={focusHistoryRef.current.length > 0}
+          backTypeName={focusHistoryRef.current.length > 0 ? focusHistoryRef.current[focusHistoryRef.current.length - 1] : undefined}
           onClose={handleExitFocus}
           onToggleDepth={handleToggleDepth}
           onBack={handleFocusBack}
