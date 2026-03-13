@@ -23,6 +23,7 @@ import '@xyflow/react/dist/style.css'
 
 import { Tab } from '@sanity/ui'
 import { RxReset } from 'react-icons/rx'
+import { TbFocus2, TbArrowsMaximize } from 'react-icons/tb'
 import { useDarkMode } from '../hooks/useDarkMode'
 import SchemaNode, { SCHEMA_NODE_TYPE, type SchemaNodeData } from './SchemaNode'
 import FloatingEdge from './FloatingEdge'
@@ -422,6 +423,127 @@ async function getElkLayout(spacing: number,
 // Build initial nodes & edges from discovered types
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Focus mode — neighbourhood extraction
+// ---------------------------------------------------------------------------
+
+function getNeighbourhood(
+  types: DiscoveredType[],
+  focusTypeName: string,
+  depth: 1 | 2,
+): Set<string> {
+  const typeMap = new Map(types.map(t => [t.name, t]))
+  const included = new Set<string>([focusTypeName])
+
+  // 1-hop: direct connections (references to and from)
+  const focusType = typeMap.get(focusTypeName)
+  if (focusType) {
+    for (const field of focusType.fields) {
+      if ((field.isReference || field.isInlineObject) && field.referenceTo) {
+        included.add(field.referenceTo)
+      }
+    }
+  }
+  // Also find types that reference the focus type
+  for (const type of types) {
+    for (const field of type.fields) {
+      if ((field.isReference || field.isInlineObject) && field.referenceTo === focusTypeName) {
+        included.add(type.name)
+      }
+    }
+  }
+
+  if (depth === 2) {
+    // 2-hop: connections of connections
+    const firstHop = new Set(included)
+    for (const name of firstHop) {
+      const type = typeMap.get(name)
+      if (!type) continue
+      for (const field of type.fields) {
+        if ((field.isReference || field.isInlineObject) && field.referenceTo) {
+          included.add(field.referenceTo)
+        }
+      }
+      // Also find types that reference any 1-hop type
+      for (const t of types) {
+        for (const field of t.fields) {
+          if ((field.isReference || field.isInlineObject) && field.referenceTo && firstHop.has(field.referenceTo)) {
+            included.add(t.name)
+          }
+        }
+      }
+    }
+  }
+
+  return included
+}
+
+// ---------------------------------------------------------------------------
+// Focus mode — UI components
+// ---------------------------------------------------------------------------
+
+function NodeContextMenu({ x, y, typeName, onFocus, onExpand, onClose }: {
+  x: number; y: number; typeName: string
+  onFocus: () => void; onExpand: () => void; onClose: () => void
+}) {
+  useEffect(() => {
+    const handler = () => onClose()
+    window.addEventListener('click', handler, { once: true, capture: false })
+    return () => window.removeEventListener('click', handler)
+  }, [onClose])
+
+  return (
+    <div
+      className="absolute z-50 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg py-1 min-w-[160px]"
+      style={{ left: x, top: y }}
+      onClick={(e) => e.stopPropagation()}
+    >
+      <div className="px-3 py-1.5 text-xs text-gray-400 dark:text-gray-500 font-medium">
+        {typeName}
+      </div>
+      <button
+        className="w-full text-left px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-2"
+        onClick={() => { onFocus(); onClose() }}
+      >
+        <TbFocus2 className="text-blue-500" /> Focus
+      </button>
+      <button
+        className="w-full text-left px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-2"
+        onClick={() => { onExpand(); onClose() }}
+      >
+        <TbArrowsMaximize className="text-purple-500" /> Expand
+      </button>
+    </div>
+  )
+}
+
+function FocusBar({ typeName, depth, connectedCount, onClose, onToggleDepth }: {
+  typeName: string; depth: 1 | 2; connectedCount: number
+  onClose: () => void; onToggleDepth: () => void
+}) {
+  return (
+    <div className="absolute top-3 left-3 z-20 bg-white/90 dark:bg-gray-900/90 backdrop-blur-sm border border-gray-200 dark:border-gray-700 rounded-lg px-4 py-2 flex items-center gap-3 shadow-sm">
+      <span className="text-sm text-gray-600 dark:text-gray-300">
+        Focused on <span className="font-medium text-gray-900 dark:text-gray-100">{typeName}</span>
+        <span className="text-gray-400 dark:text-gray-500 ml-1">— {connectedCount} connected type{connectedCount !== 1 ? 's' : ''}</span>
+      </span>
+      <button
+        onClick={onToggleDepth}
+        className="text-xs px-2 py-0.5 rounded-full border border-gray-300 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"
+      >
+        {depth === 1 ? 'Expand' : 'Focus'}
+      </button>
+      <button
+        onClick={onClose}
+        className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+        title="Exit focus mode"
+      >
+        ✕
+      </button>
+    </div>
+  )
+}
+
 function buildNodesAndEdges(types: DiscoveredType[], edgeStyle: EdgeStyle = 'bezier'): {
   nodes: SchemaNode_RF[]
   edges: SchemaEdge[]
@@ -689,6 +811,19 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle }: { types
   const edgeStyleRef = useRef(edgeStyle)
   edgeStyleRef.current = edgeStyle
 
+  // Focus mode state
+  const [focusState, setFocusState] = useState<{
+    typeName: string
+    depth: 1 | 2
+  } | null>(null)
+  const [contextMenu, setContextMenu] = useState<{
+    x: number
+    y: number
+    typeName: string
+  } | null>(null)
+  const preFocusNodesRef = useRef<SchemaNode_RF[] | null>(null)
+  const preFocusEdgesRef = useRef<SchemaEdge[] | null>(null)
+
   const { nodes: initialNodes, edges: initialEdges } = useMemo(
     () => buildNodesAndEdges(types, edgeStyleRef.current),
     [types],
@@ -812,6 +947,62 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle }: { types
     handleSpacingChange(defaultVal)
   }, [layoutType, handleSpacingChange])
 
+  // Focus mode handlers
+  const handleFocus = useCallback((typeName: string, depth: 1 | 2) => {
+    // Save current state if not already focused
+    if (!focusState) {
+      preFocusNodesRef.current = nodes as SchemaNode_RF[]
+      preFocusEdgesRef.current = edges as SchemaEdge[]
+    }
+
+    setFocusState({ typeName, depth })
+
+    // Get neighbourhood
+    const included = getNeighbourhood(types, typeName, depth)
+
+    // Filter to subset
+    const filteredTypes = types.filter(t => included.has(t.name))
+    const { nodes: subsetNodes, edges: subsetEdges } = buildNodesAndEdges(filteredTypes, edgeStyleRef.current)
+
+    setNodes(subsetNodes)
+    setEdges(subsetEdges)
+
+    // Re-layout the subset (wait for nodes to be measured)
+    setLayoutApplied(false)
+  }, [types, nodes, edges, focusState, setNodes, setEdges])
+
+  const handleExitFocus = useCallback(() => {
+    setFocusState(null)
+
+    // Restore pre-focus state
+    if (preFocusNodesRef.current && preFocusEdgesRef.current) {
+      setNodes(preFocusNodesRef.current as any)
+      setEdges(preFocusEdgesRef.current as any)
+      preFocusNodesRef.current = null
+      preFocusEdgesRef.current = null
+
+      window.requestAnimationFrame(() => {
+        fitView({ padding: 0.12, duration: 300 })
+      })
+    }
+  }, [setNodes, setEdges, fitView])
+
+  const handleToggleDepth = useCallback(() => {
+    if (!focusState) return
+    const newDepth = focusState.depth === 1 ? 2 : 1
+    handleFocus(focusState.typeName, newDepth)
+  }, [focusState, handleFocus])
+
+  // Escape key exits focus mode
+  useEffect(() => {
+    if (!focusState) return
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') handleExitFocus()
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [focusState, handleExitFocus])
+
   return (
     <div ref={containerRef} className="relative w-full h-full">
       <GraphControls layout={layoutType} onLayoutChange={handleLayoutChange} edgeStyle={edgeStyle} onEdgeStyleChange={handleEdgeStyleChange} spacing={spacing} onSpacingChange={handleSpacingChange} onResetSpacing={handleResetSpacing} hasOriginalPositions={!!initialPositions && Object.keys(initialPositions).length > 0} />
@@ -819,6 +1010,15 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle }: { types
         <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10 bg-white/90 dark:bg-gray-900/90 backdrop-blur-sm border rounded-md px-3 py-1 text-xs text-gray-500 dark:text-gray-400">
           Layouting…
         </div>
+      )}
+      {focusState && (
+        <FocusBar
+          typeName={focusState.typeName}
+          depth={focusState.depth}
+          connectedCount={nodes.length - 1}
+          onClose={handleExitFocus}
+          onToggleDepth={handleToggleDepth}
+        />
       )}
       <ReactFlow
         nodes={nodes}
@@ -840,6 +1040,18 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle }: { types
           type: 'floating',
           animated: false,
         }}
+        onNodeClick={(event, node) => {
+          const bounds = containerRef.current?.getBoundingClientRect()
+          if (!bounds) return
+          setContextMenu({
+            x: event.clientX - bounds.left,
+            y: event.clientY - bounds.top,
+            typeName: node.id,
+          })
+        }}
+        onPaneClick={() => {
+          setContextMenu(null)
+        }}
       >
         <Background gap={16} size={1} color={isDark ? '#1e293b' : '#e2e8f0'} />
         <Controls showInteractive={false} />
@@ -851,6 +1063,16 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle }: { types
           zoomable
         />
       </ReactFlow>
+      {contextMenu && (
+        <NodeContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          typeName={contextMenu.typeName}
+          onFocus={() => handleFocus(contextMenu.typeName, 1)}
+          onExpand={() => handleFocus(contextMenu.typeName, 2)}
+          onClose={() => setContextMenu(null)}
+        />
+      )}
     </div>
   )
 }
