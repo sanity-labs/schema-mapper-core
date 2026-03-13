@@ -482,6 +482,11 @@ function getNeighbourhood(
 // Focus mode — UI components
 // ---------------------------------------------------------------------------
 
+/** Stable key for a set of types — used to cache focus state across schema switches */
+function typesKey(types: DiscoveredType[]): string {
+  return types.map(t => t.name).sort().join(',')
+}
+
 function NodeContextMenu({ x, y, typeName, onFocus, onExpand, onClose }: {
   x: number; y: number; typeName: string
   onFocus: () => void; onExpand: () => void; onClose: () => void
@@ -822,6 +827,10 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle }: { types
     typeName: string
     depth: 1 | 2
   } | null>(null)
+  // Cache focus state per schema so switching back restores it
+  const focusCacheRef = useRef<Map<string, { typeName: string; depth: 1 | 2 }>>(new Map())
+  const prevTypesKeyRef = useRef<string>(typesKey(types))
+
   const [contextMenu, setContextMenu] = useState<{
     x: number
     y: number
@@ -864,10 +873,38 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle }: { types
 
   // Re-sync when types change (e.g. switching dataset/schema)
   useEffect(() => {
-    setFocusState(null)
+    const newKey = typesKey(types)
+    const oldKey = prevTypesKeyRef.current
+
+    // Save current focus under old key
+    if (focusState && oldKey !== newKey) {
+      focusCacheRef.current.set(oldKey, { typeName: focusState.typeName, depth: focusState.depth })
+    }
+
     setContextMenu(null)
     preFocusNodesRef.current = null
     preFocusEdgesRef.current = null
+    prevTypesKeyRef.current = newKey
+
+    // Check if we have a cached focus for the new types
+    const cached = focusCacheRef.current.get(newKey)
+    if (cached) {
+      // Verify the focused type still exists in the new types
+      const typeExists = types.some(t => t.name === cached.typeName)
+      if (typeExists) {
+        setFocusState(cached)
+        const included = getNeighbourhood(types, cached.typeName, cached.depth)
+        const filteredTypes = types.filter(t => included.has(t.name))
+        const { nodes: subsetNodes, edges: subsetEdges } = buildNodesAndEdges(filteredTypes, edgeStyleRef.current)
+        setNodes(subsetNodes)
+        setEdges(subsetEdges)
+        setLayoutApplied(false)
+        return
+      }
+      focusCacheRef.current.delete(newKey)
+    }
+
+    setFocusState(null)
     const { nodes: newNodes, edges: newEdges } = buildNodesAndEdges(types, edgeStyleRef.current)
     setNodes(newNodes)
     setEdges(newEdges)
@@ -982,6 +1019,8 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle }: { types
   }, [types, nodes, edges, focusState, setNodes, setEdges])
 
   const handleExitFocus = useCallback(() => {
+    // Clear cached focus for current types
+    focusCacheRef.current.delete(typesKey(types))
     setFocusState(null)
 
     // Restore pre-focus state
