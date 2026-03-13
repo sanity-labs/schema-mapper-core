@@ -637,6 +637,14 @@ function buildNodesAndEdges(
       documentCount: type.documentCount,
       fields: type.fields,
       ...extraNodeData,
+      // Compute per-node: does this node have orphaned refs that add right margin?
+      orphanedRefPadding: extraNodeData?.visibleTypeNames
+        ? type.fields.some(f =>
+            (f.isReference || f.type === 'reference') &&
+            f.referenceTo &&
+            !extraNodeData.visibleTypeNames!.has(f.referenceTo)
+          ) ? 130 : 0
+        : 0,
     },
   }))
 
