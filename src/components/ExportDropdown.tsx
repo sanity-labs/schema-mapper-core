@@ -17,6 +17,8 @@ export interface ExportContext {
   orgId?: string
   orgName?: string
   workspaceName?: string
+  focusedType?: string
+  focusDepth?: 1 | 2
 }
 
 export interface ExportMenuItem {
@@ -36,9 +38,10 @@ interface ExportDropdownProps {
   extraMenuItems?: ExportMenuItem[]
   jsonPayload?: Record<string, unknown>
   pixelRatio?: number
+  disabled?: boolean
 }
 
-export function ExportDropdown({ graphRef, context, types, onExport, extraMenuItems, jsonPayload, pixelRatio = 2 }: ExportDropdownProps) {
+export function ExportDropdown({ graphRef, context, types, onExport, extraMenuItems, jsonPayload, pixelRatio = 2, disabled = false }: ExportDropdownProps) {
   const [open, setOpen] = useState(false)
   const [exporting, setExporting] = useState<string | null>(null)
   const [schemaCodeOpen, setSchemaCodeOpen] = useState(false)
@@ -447,8 +450,9 @@ export function ExportDropdown({ graphRef, context, types, onExport, extraMenuIt
     <>
     <div ref={dropdownRef} className="relative">
       <button
-        onClick={() => setOpen(!open)}
-        className="flex items-center gap-1.5 px-2.5 py-1 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+        onClick={() => !disabled && setOpen(!open)}
+        disabled={disabled}
+        className={`flex items-center gap-1.5 px-2.5 py-1 text-sm rounded-md transition-colors ${disabled ? 'text-gray-300 dark:text-gray-600 cursor-not-allowed' : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-800'}`}
       >
         <GrDownload />
         Export

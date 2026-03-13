@@ -804,7 +804,7 @@ function GraphControls({
 // Inner component (needs ReactFlowProvider ancestor for hooks)
 // ---------------------------------------------------------------------------
 
-function SchemaGraphInner({ types, initialPositions, initialEdgeStyle }: { types: DiscoveredType[]; initialPositions?: Record<string, { x: number; y: number }>; initialEdgeStyle?: EdgeStyle }) {
+function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateChange }: { types: DiscoveredType[]; initialPositions?: Record<string, { x: number; y: number }>; initialEdgeStyle?: EdgeStyle; onStateChange?: (state: SchemaGraphState) => void }) {
   const isDark = useDarkMode()
   const { fitView } = useReactFlow()
   const nodesInitialized = useNodesInitialized()
@@ -976,6 +976,16 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle }: { types
 
   // Search filter — rebuild graph with matching types
   const isSearching = searchQuery.trim().length > 0
+
+  // Notify parent of state changes
+  useEffect(() => {
+    onStateChange?.({
+      focusedType: focusState?.typeName,
+      focusDepth: focusState?.depth,
+      isSearching,
+      visibleTypeCount: nodes.length,
+    })
+  }, [focusState, isSearching, nodes.length, onStateChange])
 
   const handleSearchChange = useCallback((query: string) => {
     setSearchQuery(query)
@@ -1276,13 +1286,21 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle }: { types
 // Exported component — wraps with ReactFlowProvider
 // ---------------------------------------------------------------------------
 
+export interface SchemaGraphState {
+  focusedType?: string
+  focusDepth?: 1 | 2
+  isSearching: boolean
+  visibleTypeCount: number
+}
+
 export interface SchemaGraphProps {
   types: DiscoveredType[]
   initialPositions?: Record<string, { x: number; y: number }>
   initialEdgeStyle?: 'bezier' | 'step' | 'straight'
+  onStateChange?: (state: SchemaGraphState) => void
 }
 
-export function SchemaGraph({ types, initialPositions, initialEdgeStyle }: SchemaGraphProps) {
+export function SchemaGraph({ types, initialPositions, initialEdgeStyle, onStateChange }: SchemaGraphProps) {
   if (types.length === 0) {
     return (
       <div className="flex items-center justify-center w-full h-full text-gray-400 text-sm">
@@ -1294,7 +1312,7 @@ export function SchemaGraph({ types, initialPositions, initialEdgeStyle }: Schem
   return (
     <div style={{ width: '100%', height: '100%', minHeight: 500 }}>
       <ReactFlowProvider>
-        <SchemaGraphInner types={types} initialPositions={initialPositions} initialEdgeStyle={initialEdgeStyle} />
+        <SchemaGraphInner types={types} initialPositions={initialPositions} initialEdgeStyle={initialEdgeStyle} onStateChange={onStateChange} />
       </ReactFlowProvider>
     </div>
   )
