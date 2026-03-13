@@ -534,7 +534,7 @@ function FocusBar({ typeName, depth, connectedCount, canExpand, onClose, onToggl
   onClose: () => void; onToggleDepth: () => void
 }) {
   return (
-    <div className="absolute top-3 left-3 z-20 bg-white/90 dark:bg-gray-900/90 backdrop-blur-sm border border-gray-200 dark:border-gray-700 rounded-lg px-4 py-2 flex items-center gap-3 shadow-sm">
+    <div className="absolute top-14 left-3 z-20 bg-white/90 dark:bg-gray-900/90 backdrop-blur-sm border border-gray-200 dark:border-gray-700 rounded-lg px-4 py-2 flex items-center gap-3 shadow-sm">
       <span className="text-sm text-gray-600 dark:text-gray-300">
         Focused on <span className="font-medium text-gray-900 dark:text-gray-100">{typeName}</span>
         <span className="text-gray-400 dark:text-gray-500 ml-1">({depth === 1 ? '1-hop' : '2-hop'}) — {connectedCount} connected type{connectedCount !== 1 ? 's' : ''}</span>
@@ -557,6 +557,53 @@ function FocusBar({ typeName, depth, connectedCount, canExpand, onClose, onToggl
       >
         ✕
       </button>
+    </div>
+  )
+}
+
+function SearchBox({ query, onChange, onClear, resultCount, totalCount }: {
+  query: string; onChange: (q: string) => void; onClear: () => void
+  resultCount: number; totalCount: number
+}) {
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && query) {
+        e.preventDefault()
+        onClear()
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [query, onClear])
+
+  return (
+    <div className="absolute top-3 left-3 z-20 bg-white/90 dark:bg-gray-900/90 backdrop-blur-sm border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 flex items-center gap-2 shadow-sm">
+      <svg className="w-4 h-4 text-gray-400 dark:text-gray-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+      </svg>
+      <input
+        ref={inputRef}
+        type="text"
+        value={query}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="Filter types…"
+        className="bg-transparent border-none outline-none text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 w-[160px]"
+      />
+      {query && (
+        <>
+          <span className="text-xs text-gray-400 dark:text-gray-500 whitespace-nowrap">
+            {resultCount}/{totalCount}
+          </span>
+          <button
+            onClick={onClear}
+            className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 shrink-0"
+          >
+            ✕
+          </button>
+        </>
+      )}
     </div>
   )
 }
@@ -833,6 +880,11 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle }: { types
     typeName: string
     depth: 1 | 2
   } | null>(null)
+  // Search/filter state
+  const [searchQuery, setSearchQuery] = useState('')
+  const allTypesRef = useRef(types)
+  allTypesRef.current = types
+
   // Cache focus state per schema so switching back restores it
   const focusCacheRef = useRef<Map<string, { typeName: string; depth: 1 | 2 }>>(new Map())
   const prevTypesKeyRef = useRef<string>(typesKey(types))
@@ -887,6 +939,7 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle }: { types
       focusCacheRef.current.set(oldKey, { typeName: focusState.typeName, depth: focusState.depth })
     }
 
+    setSearchQuery('')
     setContextMenu(null)
     preFocusNodesRef.current = null
     preFocusEdgesRef.current = null
@@ -911,6 +964,45 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle }: { types
     }
 
     setFocusState(null)
+    const { nodes: newNodes, edges: newEdges } = buildNodesAndEdges(types, edgeStyleRef.current)
+    setNodes(newNodes)
+    setEdges(newEdges)
+    setLayoutApplied(false)
+  }, [types, setNodes, setEdges])
+
+  // Search filter — rebuild graph with matching types
+  const handleSearchChange = useCallback((query: string) => {
+    setSearchQuery(query)
+    // Exit focus mode when searching
+    if (focusState) {
+      focusCacheRef.current.delete(typesKey(types))
+      setFocusState(null)
+      setContextMenu(null)
+      preFocusNodesRef.current = null
+      preFocusEdgesRef.current = null
+    }
+    if (!query.trim()) {
+      // Restore full graph
+      const { nodes: newNodes, edges: newEdges } = buildNodesAndEdges(types, edgeStyleRef.current)
+      setNodes(newNodes)
+      setEdges(newEdges)
+      setLayoutApplied(false)
+      return
+    }
+    const q = query.toLowerCase()
+    const filtered = types.filter(t =>
+      t.name.toLowerCase().includes(q) ||
+      (t.title && t.title.toLowerCase().includes(q)) ||
+      t.fields.some(f => f.name.toLowerCase().includes(q))
+    )
+    const { nodes: subsetNodes, edges: subsetEdges } = buildNodesAndEdges(filtered, edgeStyleRef.current)
+    setNodes(subsetNodes)
+    setEdges(subsetEdges)
+    setLayoutApplied(false)
+  }, [types, focusState, setNodes, setEdges])
+
+  const handleSearchClear = useCallback(() => {
+    setSearchQuery('')
     const { nodes: newNodes, edges: newEdges } = buildNodesAndEdges(types, edgeStyleRef.current)
     setNodes(newNodes)
     setEdges(newEdges)
@@ -1066,6 +1158,13 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle }: { types
           Layouting…
         </div>
       )}
+      <SearchBox
+        query={searchQuery}
+        onChange={handleSearchChange}
+        onClear={handleSearchClear}
+        resultCount={nodes.length}
+        totalCount={types.length}
+      />
       {focusState && (
         <FocusBar
           typeName={focusState.typeName}
