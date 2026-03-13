@@ -25,7 +25,7 @@ import { Tab, Button } from '@sanity/ui'
 import { RxReset } from 'react-icons/rx'
 import { TbFocus2, TbArrowsMaximize } from 'react-icons/tb'
 import { GrContract, GrExpand } from 'react-icons/gr'
-import { GoChevronLeft } from 'react-icons/go'
+import { GoArrowLeft } from 'react-icons/go'
 import { useDarkMode } from '../hooks/useDarkMode'
 import SchemaNode, { SCHEMA_NODE_TYPE, type SchemaNodeData } from './SchemaNode'
 import FloatingEdge from './FloatingEdge'
@@ -542,7 +542,7 @@ function FocusBar({ typeName, depth, connectedCount, canExpand, canGoBack, onClo
           className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 -ml-1"
           title="Go back"
         >
-          <GoChevronLeft className="w-4 h-4" />
+          <GoArrowLeft className="w-4 h-4" />
         </button>
       )}
       <span className="text-sm text-gray-600 dark:text-gray-300">
