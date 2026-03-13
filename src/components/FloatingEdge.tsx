@@ -13,6 +13,16 @@ import {
 } from '@xyflow/react'
 
 // ---------------------------------------------------------------------------
+// Utility: get the visual width of a node (excluding orphaned ref padding)
+// ---------------------------------------------------------------------------
+
+function getVisualWidth(node: InternalNode<Node>): number {
+  const measured = node.measured.width ?? 280
+  const padding = (node.data as any)?.orphanedRefPadding ?? 0
+  return measured - padding
+}
+
+// ---------------------------------------------------------------------------
 // Utility: find the point where an edge exits/enters a node's border
 // (Used for the TARGET side, where we don't need handle-awareness)
 // ---------------------------------------------------------------------------
