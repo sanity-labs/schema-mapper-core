@@ -887,6 +887,7 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle }: { types
   const allTypesRef = useRef(types)
   allTypesRef.current = types
   const searchLayoutOverrideRef = useRef<{ layout: LayoutType; spacing: number } | null>(null)
+  const preFocusLayoutRef = useRef<{ layout: LayoutType; spacing: number } | null>(null)
 
   // Cache focus state per schema so switching back restores it
   const focusCacheRef = useRef<Map<string, { typeName: string; depth: 1 | 2 }>>(new Map())
@@ -1121,6 +1122,16 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle }: { types
       preFocusEdgesRef.current = edges as SchemaEdge[]
     }
 
+    // If on Submitted layout, switch to force for focus (positions don't apply to subsets)
+    if (layoutType === 'original') {
+      preFocusLayoutRef.current = { layout: layoutType, spacing: spacing }
+      setLayoutType('force')
+      // Use force default spacing via the override ref
+      searchLayoutOverrideRef.current = { layout: 'force', spacing: DEFAULT_SPACING.force }
+    } else {
+      preFocusLayoutRef.current = null
+    }
+
     setFocusState({ typeName, depth })
 
     // Get neighbourhood
@@ -1133,14 +1144,21 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle }: { types
     setNodes(subsetNodes)
     setEdges(subsetEdges)
 
-    // Re-layout the subset with user's layout (not search override)
+    // Re-layout the subset
     setLayoutApplied(false)
-  }, [types, nodes, edges, focusState, searchQuery, setNodes, setEdges])
+  }, [types, nodes, edges, focusState, searchQuery, layoutType, spacing, setNodes, setEdges])
 
   const handleExitFocus = useCallback(() => {
     // Clear cached focus for current types
     focusCacheRef.current.delete(typesKey(types))
     setFocusState(null)
+
+    // Restore layout if we overrode it (e.g. from Submitted → force)
+    if (preFocusLayoutRef.current) {
+      setLayoutType(preFocusLayoutRef.current.layout)
+      searchLayoutOverrideRef.current = null
+      preFocusLayoutRef.current = null
+    }
 
     // Restore pre-focus state
     if (preFocusNodesRef.current && preFocusEdgesRef.current) {
