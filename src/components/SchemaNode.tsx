@@ -1,7 +1,7 @@
 import { Handle, Position, type NodeProps, type Node } from '@xyflow/react';
 import { Badge } from './ui/badge';
 import { ArrowRight } from 'lucide-react';
-import { memo, useMemo } from 'react';
+import React, { memo, useMemo } from 'react';
 import type { DiscoveredField } from '../types';
 
 // ---------------------------------------------------------------------------
@@ -15,6 +15,8 @@ export type SchemaNodeData = {
   hasIncoming?: boolean;
   hasOutgoing?: boolean;
   incomingEdgeCount?: number;
+  onReferenceClick?: (referenceTo: string) => void;
+  visibleTypeNames?: Set<string>;
 };
 
 export type SchemaNodeType = Node<SchemaNodeData, 'schema'>;
@@ -65,16 +67,21 @@ function FieldRow({
   index,
   totalRefs,
   refIndex,
+  onReferenceClick,
+  visibleTypeNames,
 }: {
   field: DiscoveredField;
   index: number;
   totalRefs: number;
   refIndex: number; // -1 if not a reference
+  onReferenceClick?: (referenceTo: string) => void;
+  visibleTypeNames?: Set<string>;
 }) {
   const isRef = field.isReference || field.type === 'reference';
   const isInline = field.isInlineObject === true;
   const style = fieldBadgeStyle(isInline ? 'object' : field.type);
   const even = index % 2 === 0;
+  const isOrphaned = isRef && field.referenceTo && visibleTypeNames && !visibleTypeNames.has(field.referenceTo);
 
   return (
     <div
@@ -89,6 +96,11 @@ function FieldRow({
       data-field-is-inline={field.isInlineObject ? 'true' : undefined}
       data-field-is-array={field.isArray ? 'true' : undefined}
       data-field-ref-to={field.referenceTo || undefined}
+      onClick={isRef && field.referenceTo && onReferenceClick ? (e: React.MouseEvent) => {
+        e.stopPropagation();
+        onReferenceClick(field.referenceTo!);
+      } : undefined}
+      style={isRef && field.referenceTo && onReferenceClick ? { cursor: 'pointer' } : undefined}
     >
       {/* Field name */}
       <span
@@ -117,6 +129,21 @@ function FieldRow({
           className="!absolute !right-0 !top-1/2 !-translate-y-1/2 !translate-x-1/2 !w-[1px] !h-[1px] !border-0 !bg-transparent !min-w-0 !min-h-0"
         />
       )}
+
+      {/* Orphaned reference lozenge — shown when target type is not in current view */}
+      {isOrphaned && onReferenceClick && (
+        <button
+          className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-[calc(100%+8px)] z-10 flex items-center gap-1 px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 text-[10px] font-medium border border-indigo-200 dark:border-indigo-700 hover:bg-indigo-200 dark:hover:bg-indigo-800/50 transition-colors whitespace-nowrap shadow-sm"
+          onClick={(e) => {
+            e.stopPropagation();
+            onReferenceClick(field.referenceTo!);
+          }}
+          title={`Focus on ${field.referenceTo}`}
+        >
+          <ArrowRight className="w-2.5 h-2.5" />
+          {field.referenceTo}
+        </button>
+      )}
     </div>
   );
 }
@@ -126,7 +153,7 @@ function FieldRow({
 // ---------------------------------------------------------------------------
 
 function SchemaNode({ data }: NodeProps<SchemaNodeType>) {
-  const { typeName, documentCount, fields } = data;
+  const { typeName, documentCount, fields, onReferenceClick, visibleTypeNames } = data;
 
   // Pre-compute reference indices for handle positioning
   const refFields = useMemo(
@@ -142,8 +169,18 @@ function SchemaNode({ data }: NodeProps<SchemaNodeType>) {
 
   const totalRefs = Object.keys(refFields).length;
 
+  // Check if any reference fields point to types not in the current view
+  const hasOrphanedRefs = useMemo(() => {
+    if (!visibleTypeNames || !onReferenceClick) return false;
+    return fields.some(f =>
+      (f.isReference || f.type === 'reference') &&
+      f.referenceTo &&
+      !visibleTypeNames.has(f.referenceTo)
+    );
+  }, [fields, visibleTypeNames, onReferenceClick]);
+
   return (
-    <div className="rounded-md border bg-card text-card-foreground min-w-[200px] max-w-[280px] overflow-hidden">
+    <div className={"rounded-md border bg-card text-card-foreground min-w-[200px] max-w-[280px]" + (hasOrphanedRefs ? " mr-[130px]" : "")} style={{ overflow: hasOrphanedRefs ? 'visible' : 'hidden' }}>
       {/* ---- Invisible handles on all 4 sides for floating edge connections ---- */}
       <Handle
         type="target"
@@ -201,6 +238,8 @@ function SchemaNode({ data }: NodeProps<SchemaNodeType>) {
             index={i}
             totalRefs={totalRefs}
             refIndex={refFields[field.name] ?? -1}
+            onReferenceClick={onReferenceClick}
+            visibleTypeNames={visibleTypeNames}
           />
         ))}
       </div>

@@ -25,6 +25,7 @@ import { Tab, Button } from '@sanity/ui'
 import { RxReset } from 'react-icons/rx'
 import { TbFocus2, TbArrowsMaximize } from 'react-icons/tb'
 import { GrContract, GrExpand } from 'react-icons/gr'
+import { GoChevronLeft } from 'react-icons/go'
 import { useDarkMode } from '../hooks/useDarkMode'
 import SchemaNode, { SCHEMA_NODE_TYPE, type SchemaNodeData } from './SchemaNode'
 import FloatingEdge from './FloatingEdge'
@@ -529,12 +530,21 @@ function NodeContextMenu({ x, y, typeName, onFocus, onExpand, onClose }: {
   )
 }
 
-function FocusBar({ typeName, depth, connectedCount, canExpand, onClose, onToggleDepth }: {
-  typeName: string; depth: 1 | 2; connectedCount: number; canExpand: boolean
-  onClose: () => void; onToggleDepth: () => void
+function FocusBar({ typeName, depth, connectedCount, canExpand, canGoBack, onClose, onToggleDepth, onBack }: {
+  typeName: string; depth: 1 | 2; connectedCount: number; canExpand: boolean; canGoBack: boolean
+  onClose: () => void; onToggleDepth: () => void; onBack: () => void
 }) {
   return (
     <div className="absolute top-3 left-3 z-20 bg-white/90 dark:bg-gray-900/90 backdrop-blur-sm border border-gray-200 dark:border-gray-700 rounded-lg px-4 py-2 flex items-center gap-3 shadow-sm">
+      {canGoBack && (
+        <button
+          onClick={onBack}
+          className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 -ml-1"
+          title="Go back"
+        >
+          <GoChevronLeft className="w-4 h-4" />
+        </button>
+      )}
       <span className="text-sm text-gray-600 dark:text-gray-300">
         Focused on <span className="font-medium text-gray-900 dark:text-gray-100">{typeName}</span>
         <span className="text-gray-400 dark:text-gray-500 ml-1">({depth === 1 ? '1-hop' : '2-hop'}) — {connectedCount} connected type{connectedCount !== 1 ? 's' : ''}</span>
@@ -608,7 +618,11 @@ function SearchBox({ query, onChange, onClear, resultCount, totalCount }: {
   )
 }
 
-function buildNodesAndEdges(types: DiscoveredType[], edgeStyle: EdgeStyle = 'bezier'): {
+function buildNodesAndEdges(
+  types: DiscoveredType[],
+  edgeStyle: EdgeStyle = 'bezier',
+  extraNodeData?: Partial<SchemaNodeData>,
+): {
   nodes: SchemaNode_RF[]
   edges: SchemaEdge[]
 } {
@@ -622,6 +636,7 @@ function buildNodesAndEdges(types: DiscoveredType[], edgeStyle: EdgeStyle = 'bez
       typeName: type.name,
       documentCount: type.documentCount,
       fields: type.fields,
+      ...extraNodeData,
     },
   }))
 
@@ -893,6 +908,8 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
   const focusCacheRef = useRef<Map<string, { typeName: string; depth: 1 | 2 }>>(new Map())
   const prevTypesKeyRef = useRef<string>(typesKey(types))
 
+  const focusHistoryRef = useRef<string[]>([]) // stack of previous focusedType names
+
   const [contextMenu, setContextMenu] = useState<{
     x: number
     y: number
@@ -958,7 +975,11 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
         setFocusState(cached)
         const included = getNeighbourhood(types, cached.typeName, cached.depth)
         const filteredTypes = types.filter(t => included.has(t.name))
-        const { nodes: subsetNodes, edges: subsetEdges } = buildNodesAndEdges(filteredTypes, edgeStyleRef.current)
+        const visibleNames = new Set(filteredTypes.map(t => t.name))
+        const { nodes: subsetNodes, edges: subsetEdges } = buildNodesAndEdges(filteredTypes, edgeStyleRef.current, {
+          onReferenceClick: (ref: string) => handleReferenceNavigateRef.current(ref),
+          visibleTypeNames: visibleNames,
+        })
         setNodes(subsetNodes)
         setEdges(subsetEdges)
         setLayoutApplied(false)
@@ -1149,7 +1170,11 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
 
     // Filter to subset
     const filteredTypes = types.filter(t => included.has(t.name))
-    const { nodes: subsetNodes, edges: subsetEdges } = buildNodesAndEdges(filteredTypes, edgeStyleRef.current)
+    const visibleNames = new Set(filteredTypes.map(t => t.name))
+    const { nodes: subsetNodes, edges: subsetEdges } = buildNodesAndEdges(filteredTypes, edgeStyleRef.current, {
+      onReferenceClick: (ref: string) => handleReferenceNavigateRef.current(ref),
+      visibleTypeNames: visibleNames,
+    })
 
     setNodes(subsetNodes)
     setEdges(subsetEdges)
@@ -1158,9 +1183,37 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
     setLayoutApplied(false)
   }, [types, nodes, edges, focusState, searchQuery, layoutType, spacing, setNodes, setEdges])
 
+  // Ref-stable callback for reference navigation (avoids circular deps)
+  const handleReferenceNavigateRef = useRef<(referenceTo: string) => void>(() => {})
+
+  // Navigate focus to a referenced type (from orphaned ref lozenge)
+  const handleReferenceNavigate = useCallback((referenceTo: string) => {
+    // Only works when focused
+    if (!focusState) return
+    // Verify the target type exists in the full type set
+    if (!types.some(t => t.name === referenceTo)) return
+    // Push current focus to history
+    focusHistoryRef.current = [...focusHistoryRef.current, focusState.typeName]
+    // Focus on the new type at depth 1
+    handleFocus(referenceTo, 1)
+  }, [focusState, types, handleFocus])
+
+  // Keep ref in sync
+  handleReferenceNavigateRef.current = handleReferenceNavigate
+
+  // Go back in focus history
+  const handleFocusBack = useCallback(() => {
+    const history = focusHistoryRef.current
+    if (history.length === 0) return
+    const prev = history[history.length - 1]
+    focusHistoryRef.current = history.slice(0, -1)
+    handleFocus(prev, 1)
+  }, [handleFocus])
+
   const handleExitFocus = useCallback(() => {
-    // Clear cached focus for current types
+    // Clear cached focus and history for current types
     focusCacheRef.current.delete(typesKey(types))
+    focusHistoryRef.current = []
     setFocusState(null)
 
     // Restore pre-focus layout settings
@@ -1212,8 +1265,10 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
           depth={focusState.depth}
           connectedCount={nodes.length - 1}
           canExpand={getNeighbourhood(types, focusState.typeName, 2).size > getNeighbourhood(types, focusState.typeName, 1).size}
+          canGoBack={focusHistoryRef.current.length > 0}
           onClose={handleExitFocus}
           onToggleDepth={handleToggleDepth}
+          onBack={handleFocusBack}
         />
       )}
       {!focusState && (
