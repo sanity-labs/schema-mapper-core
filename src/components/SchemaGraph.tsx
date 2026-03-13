@@ -1160,18 +1160,17 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle }: { types
       preFocusLayoutRef.current = null
     }
 
-    // Restore pre-focus state
+    // Restore pre-focus state and re-apply layout
     if (preFocusNodesRef.current && preFocusEdgesRef.current) {
       setNodes(preFocusNodesRef.current as any)
       setEdges(preFocusEdgesRef.current as any)
       preFocusNodesRef.current = null
       preFocusEdgesRef.current = null
 
-      window.requestAnimationFrame(() => {
-        fitView({ padding: 0.12, duration: 300 })
-      })
+      // Trigger re-layout so restored layout type is actually applied
+      setLayoutApplied(false)
     }
-  }, [setNodes, setEdges, fitView])
+  }, [setNodes, setEdges])
 
   const handleToggleDepth = useCallback(() => {
     if (!focusState) return
