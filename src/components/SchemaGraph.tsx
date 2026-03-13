@@ -561,9 +561,9 @@ function FocusBar({ typeName, depth, connectedCount, canExpand, onClose, onToggl
   )
 }
 
-function SearchBox({ query, onChange, onClear, resultCount, totalCount, offsetTop = false }: {
+function SearchBox({ query, onChange, onClear, resultCount, totalCount }: {
   query: string; onChange: (q: string) => void; onClear: () => void
-  resultCount: number; totalCount: number; offsetTop?: boolean
+  resultCount: number; totalCount: number
 }) {
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -579,7 +579,7 @@ function SearchBox({ query, onChange, onClear, resultCount, totalCount, offsetTo
   }, [query, onClear])
 
   return (
-    <div className={`absolute ${offsetTop ? 'top-14' : 'top-3'} left-3 z-20 bg-white/90 dark:bg-gray-900/90 backdrop-blur-sm border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 flex items-center gap-2 shadow-sm`}>
+    <div className="absolute top-3 left-3 z-20 bg-white/90 dark:bg-gray-900/90 backdrop-blur-sm border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 flex items-center gap-2 shadow-sm">
       <svg className="w-4 h-4 text-gray-400 dark:text-gray-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
       </svg>
@@ -1122,14 +1122,14 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle }: { types
       preFocusEdgesRef.current = edges as SchemaEdge[]
     }
 
+    // Save current layout settings so we can restore on exit
+    if (!focusState) {
+      preFocusLayoutRef.current = { layout: layoutType, spacing: spacing }
+    }
     // If on Submitted layout, switch to force for focus (positions don't apply to subsets)
     if (layoutType === 'original') {
-      preFocusLayoutRef.current = { layout: layoutType, spacing: spacing }
       setLayoutType('force')
-      // Use force default spacing via the override ref
       searchLayoutOverrideRef.current = { layout: 'force', spacing: DEFAULT_SPACING.force }
-    } else {
-      preFocusLayoutRef.current = null
     }
 
     setFocusState({ typeName, depth })
@@ -1153,12 +1153,12 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle }: { types
     focusCacheRef.current.delete(typesKey(types))
     setFocusState(null)
 
-    // Restore layout if we overrode it (e.g. from Submitted → force)
+    // Restore pre-focus layout settings
     if (preFocusLayoutRef.current) {
       setLayoutType(preFocusLayoutRef.current.layout)
       searchLayoutOverrideRef.current = null
-      preFocusLayoutRef.current = null
     }
+    preFocusLayoutRef.current = null
 
     // Restore pre-focus state and re-apply layout
     if (preFocusNodesRef.current && preFocusEdgesRef.current) {
@@ -1206,14 +1206,15 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle }: { types
           onToggleDepth={handleToggleDepth}
         />
       )}
-      <SearchBox
-        query={searchQuery}
-        onChange={handleSearchChange}
-        onClear={handleSearchClear}
-        resultCount={nodes.length}
-        totalCount={types.length}
-        offsetTop={!!focusState}
-      />
+      {!focusState && (
+        <SearchBox
+          query={searchQuery}
+          onChange={handleSearchChange}
+          onClear={handleSearchClear}
+          resultCount={nodes.length}
+          totalCount={types.length}
+        />
+      )}
       <ReactFlow
         nodes={nodes}
         edges={edges}
