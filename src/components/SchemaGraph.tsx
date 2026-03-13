@@ -546,7 +546,7 @@ function FocusBar({ typeName, depth, connectedCount, onClose, onToggleDepth }: {
         padding={2}
         onClick={onToggleDepth}
         text={depth === 1 ? '2-hop' : 'Focus'}
-        icon={depth === 1 ? BsArrowsAngleExpand : BsArrowsAngleContract}
+        iconRight={depth === 1 ? BsArrowsAngleExpand : BsArrowsAngleContract}
       />
       <button
         onClick={onClose}
