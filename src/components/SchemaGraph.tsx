@@ -487,9 +487,15 @@ function NodeContextMenu({ x, y, typeName, onFocus, onExpand, onClose }: {
   onFocus: () => void; onExpand: () => void; onClose: () => void
 }) {
   useEffect(() => {
+    // Defer to next frame so the opening click doesn't immediately close
+    const raf = requestAnimationFrame(() => {
+      window.addEventListener('click', handler, { once: true, capture: false })
+    })
     const handler = () => onClose()
-    window.addEventListener('click', handler, { once: true, capture: false })
-    return () => window.removeEventListener('click', handler)
+    return () => {
+      cancelAnimationFrame(raf)
+      window.removeEventListener('click', handler)
+    }
   }, [onClose])
 
   return (
