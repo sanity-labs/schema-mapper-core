@@ -529,8 +529,8 @@ function NodeContextMenu({ x, y, typeName, onFocus, onExpand, onClose }: {
   )
 }
 
-function FocusBar({ typeName, depth, connectedCount, onClose, onToggleDepth }: {
-  typeName: string; depth: 1 | 2; connectedCount: number
+function FocusBar({ typeName, depth, connectedCount, canExpand, onClose, onToggleDepth }: {
+  typeName: string; depth: 1 | 2; connectedCount: number; canExpand: boolean
   onClose: () => void; onToggleDepth: () => void
 }) {
   return (
@@ -539,15 +539,17 @@ function FocusBar({ typeName, depth, connectedCount, onClose, onToggleDepth }: {
         Focused on <span className="font-medium text-gray-900 dark:text-gray-100">{typeName}</span>
         <span className="text-gray-400 dark:text-gray-500 ml-1">({depth === 1 ? '1-hop' : '2-hop'}) — {connectedCount} connected type{connectedCount !== 1 ? 's' : ''}</span>
       </span>
-      <Button
-        mode="ghost"
-        tone={depth === 1 ? 'primary' : 'default'}
-        fontSize={1}
-        padding={2}
-        onClick={onToggleDepth}
-        text={depth === 1 ? 'Expand' : 'Focus'}
-        icon={depth === 1 ? GrExpand : GrContract}
-      />
+      {(depth === 2 || canExpand) && (
+        <Button
+          mode="ghost"
+          tone={depth === 1 ? 'primary' : 'default'}
+          fontSize={1}
+          padding={2}
+          onClick={onToggleDepth}
+          text={depth === 1 ? 'Expand' : 'Focus'}
+          icon={depth === 1 ? GrExpand : GrContract}
+        />
+      )}
       <button
         onClick={onClose}
         className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
@@ -1069,6 +1071,7 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle }: { types
           typeName={focusState.typeName}
           depth={focusState.depth}
           connectedCount={nodes.length - 1}
+          canExpand={getNeighbourhood(types, focusState.typeName, 2).size > getNeighbourhood(types, focusState.typeName, 1).size}
           onClose={handleExitFocus}
           onToggleDepth={handleToggleDepth}
         />
