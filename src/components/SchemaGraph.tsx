@@ -534,7 +534,7 @@ function FocusBar({ typeName, depth, connectedCount, canExpand, onClose, onToggl
   onClose: () => void; onToggleDepth: () => void
 }) {
   return (
-    <div className="absolute top-14 left-3 z-20 bg-white/90 dark:bg-gray-900/90 backdrop-blur-sm border border-gray-200 dark:border-gray-700 rounded-lg px-4 py-2 flex items-center gap-3 shadow-sm">
+    <div className="absolute top-3 left-3 z-20 bg-white/90 dark:bg-gray-900/90 backdrop-blur-sm border border-gray-200 dark:border-gray-700 rounded-lg px-4 py-2 flex items-center gap-3 shadow-sm">
       <span className="text-sm text-gray-600 dark:text-gray-300">
         Focused on <span className="font-medium text-gray-900 dark:text-gray-100">{typeName}</span>
         <span className="text-gray-400 dark:text-gray-500 ml-1">({depth === 1 ? '1-hop' : '2-hop'}) — {connectedCount} connected type{connectedCount !== 1 ? 's' : ''}</span>
@@ -561,9 +561,9 @@ function FocusBar({ typeName, depth, connectedCount, canExpand, onClose, onToggl
   )
 }
 
-function SearchBox({ query, onChange, onClear, resultCount, totalCount }: {
+function SearchBox({ query, onChange, onClear, resultCount, totalCount, offsetTop = false }: {
   query: string; onChange: (q: string) => void; onClear: () => void
-  resultCount: number; totalCount: number
+  resultCount: number; totalCount: number; offsetTop?: boolean
 }) {
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -579,7 +579,7 @@ function SearchBox({ query, onChange, onClear, resultCount, totalCount }: {
   }, [query, onClear])
 
   return (
-    <div className="absolute top-3 left-3 z-20 bg-white/90 dark:bg-gray-900/90 backdrop-blur-sm border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 flex items-center gap-2 shadow-sm">
+    <div className={`absolute ${offsetTop ? 'top-14' : 'top-3'} left-3 z-20 bg-white/90 dark:bg-gray-900/90 backdrop-blur-sm border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 flex items-center gap-2 shadow-sm`}>
       <svg className="w-4 h-4 text-gray-400 dark:text-gray-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
       </svg>
@@ -1179,13 +1179,6 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle }: { types
           Layouting…
         </div>
       )}
-      <SearchBox
-        query={searchQuery}
-        onChange={handleSearchChange}
-        onClear={handleSearchClear}
-        resultCount={nodes.length}
-        totalCount={types.length}
-      />
       {focusState && (
         <FocusBar
           typeName={focusState.typeName}
@@ -1196,6 +1189,14 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle }: { types
           onToggleDepth={handleToggleDepth}
         />
       )}
+      <SearchBox
+        query={searchQuery}
+        onChange={handleSearchChange}
+        onClear={handleSearchClear}
+        resultCount={nodes.length}
+        totalCount={types.length}
+        offsetTop={!!focusState}
+      />
       <ReactFlow
         nodes={nodes}
         edges={edges}
