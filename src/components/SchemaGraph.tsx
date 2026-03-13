@@ -21,8 +21,11 @@ import ELK from 'elkjs/lib/elk.bundled.js'
 import dagre from '@dagrejs/dagre'
 import '@xyflow/react/dist/style.css'
 
-import { Tab } from '@sanity/ui'
+import { Tab, Button } from '@sanity/ui'
 import { RxReset } from 'react-icons/rx'
+import { TbFocus2, TbArrowsMaximize } from 'react-icons/tb'
+import { GrContract, GrExpand } from 'react-icons/gr'
+import { GoArrowLeft } from 'react-icons/go'
 import { useDarkMode } from '../hooks/useDarkMode'
 import SchemaNode, { SCHEMA_NODE_TYPE, type SchemaNodeData } from './SchemaNode'
 import FloatingEdge from './FloatingEdge'
@@ -422,7 +425,204 @@ async function getElkLayout(spacing: number,
 // Build initial nodes & edges from discovered types
 // ---------------------------------------------------------------------------
 
-function buildNodesAndEdges(types: DiscoveredType[], edgeStyle: EdgeStyle = 'bezier'): {
+// ---------------------------------------------------------------------------
+// Focus mode — neighbourhood extraction
+// ---------------------------------------------------------------------------
+
+function getNeighbourhood(
+  types: DiscoveredType[],
+  focusTypeName: string,
+  depth: 1 | 2,
+): Set<string> {
+  const typeMap = new Map(types.map(t => [t.name, t]))
+  const included = new Set<string>([focusTypeName])
+
+  // 1-hop: direct connections (references to and from)
+  const focusType = typeMap.get(focusTypeName)
+  if (focusType) {
+    for (const field of focusType.fields) {
+      if ((field.isReference || field.isInlineObject) && field.referenceTo) {
+        included.add(field.referenceTo)
+      }
+    }
+  }
+  // Also find types that reference the focus type
+  for (const type of types) {
+    for (const field of type.fields) {
+      if ((field.isReference || field.isInlineObject) && field.referenceTo === focusTypeName) {
+        included.add(type.name)
+      }
+    }
+  }
+
+  if (depth === 2) {
+    // 2-hop: connections of connections
+    const firstHop = new Set(included)
+    for (const name of firstHop) {
+      const type = typeMap.get(name)
+      if (!type) continue
+      for (const field of type.fields) {
+        if ((field.isReference || field.isInlineObject) && field.referenceTo) {
+          included.add(field.referenceTo)
+        }
+      }
+      // Also find types that reference any 1-hop type
+      for (const t of types) {
+        for (const field of t.fields) {
+          if ((field.isReference || field.isInlineObject) && field.referenceTo && firstHop.has(field.referenceTo)) {
+            included.add(t.name)
+          }
+        }
+      }
+    }
+  }
+
+  return included
+}
+
+// ---------------------------------------------------------------------------
+// Focus mode — UI components
+// ---------------------------------------------------------------------------
+
+/** Stable key for a set of types — used to cache focus state across schema switches */
+function typesKey(types: DiscoveredType[]): string {
+  return types.map(t => t.name).sort().join(',')
+}
+
+function NodeContextMenu({ x, y, typeName, onFocus, onExpand, onClose }: {
+  x: number; y: number; typeName: string
+  onFocus: () => void; onExpand: () => void; onClose: () => void
+}) {
+  useEffect(() => {
+    // Defer to next frame so the opening click doesn't immediately close
+    const raf = requestAnimationFrame(() => {
+      window.addEventListener('click', handler, { once: true, capture: false })
+    })
+    const handler = () => onClose()
+    return () => {
+      cancelAnimationFrame(raf)
+      window.removeEventListener('click', handler)
+    }
+  }, [onClose])
+
+  return (
+    <div
+      className="absolute z-50 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg py-1 min-w-[160px]"
+      style={{ left: x, top: y }}
+      onClick={(e) => e.stopPropagation()}
+    >
+      <div className="px-3 py-1.5 text-xs text-gray-400 dark:text-gray-500 font-medium">
+        {typeName}
+      </div>
+      <button
+        className="w-full text-left px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-2"
+        onClick={() => { onFocus(); onClose() }}
+      >
+        <TbFocus2 className="text-blue-500" /> Focus
+      </button>
+      <button
+        className="w-full text-left px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-2"
+        onClick={() => { onExpand(); onClose() }}
+      >
+        <TbArrowsMaximize className="text-purple-500" /> Expand
+      </button>
+    </div>
+  )
+}
+
+function FocusBar({ typeName, depth, connectedCount, canExpand, canGoBack, backTypeName, onClose, onToggleDepth, onBack }: {
+  typeName: string; depth: 1 | 2; connectedCount: number; canExpand: boolean; canGoBack: boolean; backTypeName?: string
+  onClose: () => void; onToggleDepth: () => void; onBack: () => void
+}) {
+  return (
+    <div className="absolute top-3 left-3 z-20 bg-white/90 dark:bg-gray-900/90 backdrop-blur-sm border border-gray-200 dark:border-gray-700 rounded-lg px-4 py-2 flex items-center gap-3 shadow-sm">
+      {canGoBack && (
+        <button
+          onClick={onBack}
+          className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 -ml-1"
+          title={backTypeName ? `Back to ${backTypeName}` : 'Go back'}
+        >
+          <GoArrowLeft className="w-4 h-4" />
+        </button>
+      )}
+      <span className="text-sm text-gray-600 dark:text-gray-300">
+        Focused on <span className="font-medium text-gray-900 dark:text-gray-100">{typeName}</span>
+        <span className="text-gray-400 dark:text-gray-500 ml-1">({depth === 1 ? '1-hop' : '2-hop'}) — {connectedCount} connected type{connectedCount !== 1 ? 's' : ''}</span>
+      </span>
+      {(depth === 2 || canExpand) && (
+        <Button
+          mode="ghost"
+          tone="primary"
+          fontSize={1}
+          padding={2}
+          onClick={onToggleDepth}
+          text={depth === 1 ? 'Expand' : 'Focus'}
+          icon={depth === 1 ? GrExpand : GrContract}
+        />
+      )}
+      <button
+        onClick={onClose}
+        className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+        title="Exit focus mode"
+      >
+        ✕
+      </button>
+    </div>
+  )
+}
+
+function SearchBox({ query, onChange, onClear, resultCount, totalCount }: {
+  query: string; onChange: (q: string) => void; onClear: () => void
+  resultCount: number; totalCount: number
+}) {
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && query) {
+        e.preventDefault()
+        onClear()
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [query, onClear])
+
+  return (
+    <div className="absolute top-3 left-3 z-20 bg-white/90 dark:bg-gray-900/90 backdrop-blur-sm border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 flex items-center gap-2 shadow-sm">
+      <svg className="w-4 h-4 text-gray-400 dark:text-gray-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+      </svg>
+      <input
+        ref={inputRef}
+        type="text"
+        value={query}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="Filter types…"
+        className="bg-transparent border-none outline-none text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 w-[160px]"
+      />
+      {query && (
+        <>
+          <span className="text-xs text-gray-400 dark:text-gray-500 whitespace-nowrap">
+            {resultCount}/{totalCount}
+          </span>
+          <button
+            onClick={onClear}
+            className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 shrink-0"
+          >
+            ✕
+          </button>
+        </>
+      )}
+    </div>
+  )
+}
+
+function buildNodesAndEdges(
+  types: DiscoveredType[],
+  edgeStyle: EdgeStyle = 'bezier',
+  extraNodeData?: Partial<SchemaNodeData>,
+): {
   nodes: SchemaNode_RF[]
   edges: SchemaEdge[]
 } {
@@ -436,6 +636,15 @@ function buildNodesAndEdges(types: DiscoveredType[], edgeStyle: EdgeStyle = 'bez
       typeName: type.name,
       documentCount: type.documentCount,
       fields: type.fields,
+      ...extraNodeData,
+      // Compute per-node: does this node have orphaned refs that add right margin?
+      orphanedRefPadding: extraNodeData?.visibleTypeNames
+        ? type.fields.some(f =>
+            (f.isReference || f.type === 'reference') &&
+            f.referenceTo &&
+            !extraNodeData.visibleTypeNames!.has(f.referenceTo)
+          ) ? 130 : 0
+        : 0,
     },
   }))
 
@@ -547,6 +756,7 @@ function GraphControls({
   onSpacingChange,
   onResetSpacing,
   hasOriginalPositions = false,
+  disabled = false,
 }: {
   layout: LayoutType
   onLayoutChange: (layout: LayoutType) => void
@@ -556,6 +766,7 @@ function GraphControls({
   onSpacingChange: (value: number) => void
   onResetSpacing: () => void
   hasOriginalPositions?: boolean
+  disabled?: boolean
 }) {
   const layouts: LayoutType[] = hasOriginalPositions
     ? ['original', 'dagre', 'layered', 'force', 'stress']
@@ -563,7 +774,7 @@ function GraphControls({
   const edgeStyles: EdgeStyle[] = ['bezier', 'step', 'straight']
 
   return (
-    <div className="absolute top-3 right-3 z-10 flex flex-col items-end gap-2 bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm rounded-lg p-2.5">
+    <div className={`absolute top-3 right-3 z-10 flex flex-col items-end gap-2 bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm rounded-lg p-2.5 transition-opacity ${disabled ? 'opacity-40 pointer-events-none' : ''}`}>
       <div className="flex gap-1">
         {layouts.map((l) => (
           <Tab
@@ -616,7 +827,7 @@ function GraphControls({
 // Inner component (needs ReactFlowProvider ancestor for hooks)
 // ---------------------------------------------------------------------------
 
-function SchemaGraphInner({ types, initialPositions, initialEdgeStyle }: { types: DiscoveredType[]; initialPositions?: Record<string, { x: number; y: number }>; initialEdgeStyle?: EdgeStyle }) {
+function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateChange }: { types: DiscoveredType[]; initialPositions?: Record<string, { x: number; y: number }>; initialEdgeStyle?: EdgeStyle; onStateChange?: (state: SchemaGraphState) => void }) {
   const isDark = useDarkMode()
   const { fitView } = useReactFlow()
   const nodesInitialized = useNodesInitialized()
@@ -689,6 +900,32 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle }: { types
   const edgeStyleRef = useRef(edgeStyle)
   edgeStyleRef.current = edgeStyle
 
+  // Focus mode state
+  const [focusState, setFocusState] = useState<{
+    typeName: string
+    depth: 1 | 2
+  } | null>(null)
+  // Search/filter state
+  const [searchQuery, setSearchQuery] = useState('')
+  const allTypesRef = useRef(types)
+  allTypesRef.current = types
+  const searchLayoutOverrideRef = useRef<{ layout: LayoutType; spacing: number } | null>(null)
+  const preFocusLayoutRef = useRef<{ layout: LayoutType; spacing: number } | null>(null)
+
+  // Cache focus state per schema so switching back restores it
+  const focusCacheRef = useRef<Map<string, { typeName: string; depth: 1 | 2 }>>(new Map())
+  const prevTypesKeyRef = useRef<string>(typesKey(types))
+
+  const focusHistoryRef = useRef<string[]>([]) // stack of previous focusedType names
+
+  const [contextMenu, setContextMenu] = useState<{
+    x: number
+    y: number
+    typeName: string
+  } | null>(null)
+  const preFocusNodesRef = useRef<SchemaNode_RF[] | null>(null)
+  const preFocusEdgesRef = useRef<SchemaEdge[] | null>(null)
+
   const { nodes: initialNodes, edges: initialEdges } = useMemo(
     () => buildNodesAndEdges(types, edgeStyleRef.current),
     [types],
@@ -721,8 +958,100 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle }: { types
 
 
 
-  // Re-sync when types change
+  // Re-sync when types change (e.g. switching dataset/schema)
   useEffect(() => {
+    const newKey = typesKey(types)
+    const oldKey = prevTypesKeyRef.current
+
+    // Save current focus under old key
+    if (focusState && oldKey !== newKey) {
+      focusCacheRef.current.set(oldKey, { typeName: focusState.typeName, depth: focusState.depth })
+    }
+
+    setSearchQuery('')
+    setContextMenu(null)
+    preFocusNodesRef.current = null
+    preFocusEdgesRef.current = null
+    prevTypesKeyRef.current = newKey
+
+    // Check if we have a cached focus for the new types
+    const cached = focusCacheRef.current.get(newKey)
+    if (cached) {
+      // Verify the focused type still exists in the new types
+      const typeExists = types.some(t => t.name === cached.typeName)
+      if (typeExists) {
+        setFocusState(cached)
+        const included = getNeighbourhood(types, cached.typeName, cached.depth)
+        const filteredTypes = types.filter(t => included.has(t.name))
+        const visibleNames = new Set(filteredTypes.map(t => t.name))
+        const { nodes: subsetNodes, edges: subsetEdges } = buildNodesAndEdges(filteredTypes, edgeStyleRef.current, {
+          onReferenceClick: (ref: string) => handleReferenceNavigateRef.current(ref),
+          visibleTypeNames: visibleNames,
+        })
+        setNodes(subsetNodes)
+        setEdges(subsetEdges)
+        setLayoutApplied(false)
+        return
+      }
+      focusCacheRef.current.delete(newKey)
+    }
+
+    setFocusState(null)
+    const { nodes: newNodes, edges: newEdges } = buildNodesAndEdges(types, edgeStyleRef.current)
+    setNodes(newNodes)
+    setEdges(newEdges)
+    setLayoutApplied(false)
+  }, [types, setNodes, setEdges])
+
+  // Search filter — rebuild graph with matching types
+  const isSearching = searchQuery.trim().length > 0
+
+  // Notify parent of state changes
+  useEffect(() => {
+    onStateChange?.({
+      focusedType: focusState?.typeName,
+      focusDepth: focusState?.depth,
+      isSearching,
+      visibleTypeCount: nodes.length,
+    })
+  }, [focusState, isSearching, nodes.length, onStateChange])
+
+  const handleSearchChange = useCallback((query: string) => {
+    setSearchQuery(query)
+    // Exit focus mode when searching
+    if (focusState) {
+      focusCacheRef.current.delete(typesKey(types))
+      setFocusState(null)
+      setContextMenu(null)
+      preFocusNodesRef.current = null
+      preFocusEdgesRef.current = null
+    }
+    if (!query.trim()) {
+      // Restore full graph with user's layout
+      searchLayoutOverrideRef.current = null
+      const { nodes: newNodes, edges: newEdges } = buildNodesAndEdges(types, edgeStyleRef.current)
+      setNodes(newNodes)
+      setEdges(newEdges)
+      setLayoutApplied(false)
+      return
+    }
+    const q = query.toLowerCase()
+    const filtered = types.filter(t =>
+      t.name.toLowerCase().includes(q) ||
+      (t.title && t.title.toLowerCase().includes(q)) ||
+      t.fields.some(f => f.name.toLowerCase().includes(q))
+    )
+    const { nodes: subsetNodes, edges: subsetEdges } = buildNodesAndEdges(filtered, edgeStyleRef.current)
+    setNodes(subsetNodes)
+    setEdges(subsetEdges)
+    // Force layered layout with default spacing for search results
+    searchLayoutOverrideRef.current = { layout: 'layered', spacing: DEFAULT_SPACING.layered }
+    setLayoutApplied(false)
+  }, [types, focusState, setNodes, setEdges])
+
+  const handleSearchClear = useCallback(() => {
+    setSearchQuery('')
+    searchLayoutOverrideRef.current = null
     const { nodes: newNodes, edges: newEdges } = buildNodesAndEdges(types, edgeStyleRef.current)
     setNodes(newNodes)
     setEdges(newEdges)
@@ -782,7 +1111,12 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle }: { types
   // Initial layout after nodes are measured
   useEffect(() => {
     if (nodesInitialized && !layoutApplied) {
-      applyLayout(nodes as SchemaNode_RF[], edges, layoutType, spacing)
+      const override = searchLayoutOverrideRef.current
+      if (override) {
+        applyLayout(nodes as SchemaNode_RF[], edges, override.layout, override.spacing)
+      } else {
+        applyLayout(nodes as SchemaNode_RF[], edges, layoutType, spacing)
+      }
     }
   }, [nodesInitialized, layoutApplied, nodes, edges, layoutType, spacing, applyLayout])
 
@@ -812,13 +1146,148 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle }: { types
     handleSpacingChange(defaultVal)
   }, [layoutType, handleSpacingChange])
 
+  // Focus mode handlers
+  const handleFocus = useCallback((typeName: string, depth: 1 | 2) => {
+    // If searching, clear search and rebuild full graph first so pre-focus state is the full graph
+    if (searchQuery.trim()) {
+      setSearchQuery('')
+      searchLayoutOverrideRef.current = null
+      const { nodes: fullNodes, edges: fullEdges } = buildNodesAndEdges(types, edgeStyleRef.current)
+      preFocusNodesRef.current = fullNodes
+      preFocusEdgesRef.current = fullEdges as SchemaEdge[]
+    } else if (!focusState) {
+      // Save current state if not already focused
+      preFocusNodesRef.current = nodes as SchemaNode_RF[]
+      preFocusEdgesRef.current = edges as SchemaEdge[]
+    }
+
+    // Save current layout settings so we can restore on exit
+    if (!focusState) {
+      preFocusLayoutRef.current = { layout: layoutType, spacing: spacing }
+    }
+    // If on Submitted layout, switch to force for focus (positions don't apply to subsets)
+    if (layoutType === 'original') {
+      setLayoutType('force')
+      searchLayoutOverrideRef.current = { layout: 'force', spacing: DEFAULT_SPACING.force }
+    }
+
+    setFocusState({ typeName, depth })
+
+    // Get neighbourhood
+    const included = getNeighbourhood(types, typeName, depth)
+
+    // Filter to subset
+    const filteredTypes = types.filter(t => included.has(t.name))
+    const visibleNames = new Set(filteredTypes.map(t => t.name))
+    const { nodes: subsetNodes, edges: subsetEdges } = buildNodesAndEdges(filteredTypes, edgeStyleRef.current, {
+      onReferenceClick: (ref: string) => handleReferenceNavigateRef.current(ref),
+      visibleTypeNames: visibleNames,
+    })
+
+    setNodes(subsetNodes)
+    setEdges(subsetEdges)
+
+    // Re-layout the subset
+    setLayoutApplied(false)
+  }, [types, nodes, edges, focusState, searchQuery, layoutType, spacing, setNodes, setEdges])
+
+  // Ref-stable callback for reference navigation (avoids circular deps)
+  const handleReferenceNavigateRef = useRef<(referenceTo: string) => void>(() => {})
+
+  // Navigate focus to a referenced type (from orphaned ref lozenge)
+  const handleReferenceNavigate = useCallback((referenceTo: string) => {
+    // Only works when focused
+    if (!focusState) return
+    // Verify the target type exists in the full type set
+    if (!types.some(t => t.name === referenceTo)) return
+    // Push current focus to history
+    focusHistoryRef.current = [...focusHistoryRef.current, focusState.typeName]
+    // Focus on the new type at depth 1
+    handleFocus(referenceTo, 1)
+  }, [focusState, types, handleFocus])
+
+  // Keep ref in sync
+  handleReferenceNavigateRef.current = handleReferenceNavigate
+
+  // Go back in focus history
+  const handleFocusBack = useCallback(() => {
+    const history = focusHistoryRef.current
+    if (history.length === 0) return
+    const prev = history[history.length - 1]
+    focusHistoryRef.current = history.slice(0, -1)
+    handleFocus(prev, 1)
+  }, [handleFocus])
+
+  const handleExitFocus = useCallback(() => {
+    // Clear cached focus and history for current types
+    focusCacheRef.current.delete(typesKey(types))
+    focusHistoryRef.current = []
+    setFocusState(null)
+
+    // Restore pre-focus layout settings
+    if (preFocusLayoutRef.current) {
+      setLayoutType(preFocusLayoutRef.current.layout)
+      searchLayoutOverrideRef.current = null
+    }
+    preFocusLayoutRef.current = null
+
+    // Restore pre-focus state and re-apply layout
+    if (preFocusNodesRef.current && preFocusEdgesRef.current) {
+      setNodes(preFocusNodesRef.current as any)
+      setEdges(preFocusEdgesRef.current as any)
+      preFocusNodesRef.current = null
+      preFocusEdgesRef.current = null
+
+      // Trigger re-layout so restored layout type is actually applied
+      setLayoutApplied(false)
+    }
+  }, [setNodes, setEdges])
+
+  const handleToggleDepth = useCallback(() => {
+    if (!focusState) return
+    const newDepth = focusState.depth === 1 ? 2 : 1
+    handleFocus(focusState.typeName, newDepth)
+  }, [focusState, handleFocus])
+
+  // Escape key exits focus mode
+  useEffect(() => {
+    if (!focusState) return
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') handleExitFocus()
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [focusState, handleExitFocus])
+
   return (
     <div ref={containerRef} className="relative w-full h-full">
-      <GraphControls layout={layoutType} onLayoutChange={handleLayoutChange} edgeStyle={edgeStyle} onEdgeStyleChange={handleEdgeStyleChange} spacing={spacing} onSpacingChange={handleSpacingChange} onResetSpacing={handleResetSpacing} hasOriginalPositions={!!initialPositions && Object.keys(initialPositions).length > 0} />
+      <GraphControls layout={layoutType} onLayoutChange={handleLayoutChange} edgeStyle={edgeStyle} onEdgeStyleChange={handleEdgeStyleChange} spacing={spacing} onSpacingChange={handleSpacingChange} onResetSpacing={handleResetSpacing} hasOriginalPositions={!!initialPositions && Object.keys(initialPositions).length > 0} disabled={isSearching} />
       {isLayouting && (
         <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10 bg-white/90 dark:bg-gray-900/90 backdrop-blur-sm border rounded-md px-3 py-1 text-xs text-gray-500 dark:text-gray-400">
           Layouting…
         </div>
+      )}
+      {focusState && (
+        <FocusBar
+          typeName={focusState.typeName}
+          depth={focusState.depth}
+          connectedCount={nodes.length - 1}
+          canExpand={getNeighbourhood(types, focusState.typeName, 2).size > getNeighbourhood(types, focusState.typeName, 1).size}
+          canGoBack={focusHistoryRef.current.length > 0}
+          backTypeName={focusHistoryRef.current.length > 0 ? focusHistoryRef.current[focusHistoryRef.current.length - 1] : undefined}
+          onClose={handleExitFocus}
+          onToggleDepth={handleToggleDepth}
+          onBack={handleFocusBack}
+        />
+      )}
+      {!focusState && (
+        <SearchBox
+          query={searchQuery}
+          onChange={handleSearchChange}
+          onClear={handleSearchClear}
+          resultCount={nodes.length}
+          totalCount={types.length}
+        />
       )}
       <ReactFlow
         nodes={nodes}
@@ -840,6 +1309,18 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle }: { types
           type: 'floating',
           animated: false,
         }}
+        onNodeClick={(event, node) => {
+          const bounds = containerRef.current?.getBoundingClientRect()
+          if (!bounds) return
+          setContextMenu({
+            x: event.clientX - bounds.left,
+            y: event.clientY - bounds.top,
+            typeName: node.id,
+          })
+        }}
+        onPaneClick={() => {
+          setContextMenu(null)
+        }}
       >
         <Background gap={16} size={1} color={isDark ? '#1e293b' : '#e2e8f0'} />
         <Controls showInteractive={false} />
@@ -851,6 +1332,16 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle }: { types
           zoomable
         />
       </ReactFlow>
+      {contextMenu && (
+        <NodeContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          typeName={contextMenu.typeName}
+          onFocus={() => handleFocus(contextMenu.typeName, 1)}
+          onExpand={() => handleFocus(contextMenu.typeName, 2)}
+          onClose={() => setContextMenu(null)}
+        />
+      )}
     </div>
   )
 }
@@ -859,13 +1350,21 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle }: { types
 // Exported component — wraps with ReactFlowProvider
 // ---------------------------------------------------------------------------
 
+export interface SchemaGraphState {
+  focusedType?: string
+  focusDepth?: 1 | 2
+  isSearching: boolean
+  visibleTypeCount: number
+}
+
 export interface SchemaGraphProps {
   types: DiscoveredType[]
   initialPositions?: Record<string, { x: number; y: number }>
   initialEdgeStyle?: 'bezier' | 'step' | 'straight'
+  onStateChange?: (state: SchemaGraphState) => void
 }
 
-export function SchemaGraph({ types, initialPositions, initialEdgeStyle }: SchemaGraphProps) {
+export function SchemaGraph({ types, initialPositions, initialEdgeStyle, onStateChange }: SchemaGraphProps) {
   if (types.length === 0) {
     return (
       <div className="flex items-center justify-center w-full h-full text-gray-400 text-sm">
@@ -877,7 +1376,7 @@ export function SchemaGraph({ types, initialPositions, initialEdgeStyle }: Schem
   return (
     <div style={{ width: '100%', height: '100%', minHeight: 500 }}>
       <ReactFlowProvider>
-        <SchemaGraphInner types={types} initialPositions={initialPositions} initialEdgeStyle={initialEdgeStyle} />
+        <SchemaGraphInner types={types} initialPositions={initialPositions} initialEdgeStyle={initialEdgeStyle} onStateChange={onStateChange} />
       </ReactFlowProvider>
     </div>
   )

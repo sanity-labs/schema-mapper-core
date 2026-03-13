@@ -13,6 +13,16 @@ import {
 } from '@xyflow/react'
 
 // ---------------------------------------------------------------------------
+// Utility: get the visual width of a node (excluding orphaned ref padding)
+// ---------------------------------------------------------------------------
+
+function getVisualWidth(node: InternalNode<Node>): number {
+  const measured = node.measured.width ?? 280
+  const padding = (node.data as any)?.orphanedRefPadding ?? 0
+  return measured - padding
+}
+
+// ---------------------------------------------------------------------------
 // Utility: find the point where an edge exits/enters a node's border
 // (Used for the TARGET side, where we don't need handle-awareness)
 // ---------------------------------------------------------------------------
@@ -21,11 +31,11 @@ function getNodeIntersection(
   node: InternalNode<Node>,
   targetNode: InternalNode<Node>,
 ): { x: number; y: number } {
-  const width = node.measured.width ?? 280
+  const width = getVisualWidth(node)
   const height = node.measured.height ?? 100
   const position = node.internals.positionAbsolute
 
-  const targetWidth = targetNode.measured.width ?? 280
+  const targetWidth = getVisualWidth(targetNode)
   const targetHeight = targetNode.measured.height ?? 100
   const targetPosition = targetNode.internals.positionAbsolute
 
@@ -62,7 +72,7 @@ function getHandleAwareSourcePoint(
   targetNode: InternalNode<Node>,
   sourceHandleId?: string | null,
 ): { x: number; y: number } {
-  const width = sourceNode.measured.width ?? 280
+  const width = getVisualWidth(sourceNode)
   const height = sourceNode.measured.height ?? 100
   const pos = sourceNode.internals.positionAbsolute
 
@@ -81,7 +91,7 @@ function getHandleAwareSourcePoint(
   // Exit from the side closest to the target node
   const targetCenterX =
     targetNode.internals.positionAbsolute.x +
-    (targetNode.measured.width ?? 280) / 2
+    getVisualWidth(targetNode) / 2
   const sourceCenterX = pos.x + width / 2
   const sourceX = targetCenterX >= sourceCenterX
     ? pos.x + width  // target is to the right → exit right
@@ -100,7 +110,7 @@ function getEdgePosition(
 ): Position {
   const nx = node.internals.positionAbsolute.x
   const ny = node.internals.positionAbsolute.y
-  const nw = node.measured.width ?? 280
+  const nw = getVisualWidth(node)
   const nh = node.measured.height ?? 100
   const px = intersectionPoint.x
   const py = intersectionPoint.y
@@ -255,7 +265,7 @@ export default memo(function FloatingEdge({
   // Self-referencing edge: loop out from right side and back
   if (source === target) {
     const nodeX = sourceNode.internals.positionAbsolute.x
-    const nodeW = sourceNode.measured.width ?? 280
+    const nodeW = getVisualWidth(sourceNode)
     const nodeY = sourceNode.internals.positionAbsolute.y
     const nodeH = sourceNode.measured.height ?? 100
 
@@ -331,12 +341,12 @@ export default memo(function FloatingEdge({
 
   if (edgeStyle === 'step') {
     const sourceX = sourceNode.internals.positionAbsolute.x
-    const sourceW = sourceNode.measured.width ?? 280
+    const sourceW = getVisualWidth(sourceNode)
     const sourceCenterX = sourceX + sourceW / 2
     const sourceCenterY = sourceNode.internals.positionAbsolute.y + (sourceNode.measured.height ?? 100) / 2
 
     const targetX = targetNode.internals.positionAbsolute.x
-    const targetW = targetNode.measured.width ?? 280
+    const targetW = getVisualWidth(targetNode)
     const targetCenterX = targetX + targetW / 2
     const targetY = targetNode.internals.positionAbsolute.y
     const targetH = targetNode.measured.height ?? 100
@@ -397,9 +407,9 @@ export default memo(function FloatingEdge({
 
   if (edgeStyle === 'step') {
     // Pass node centers for routing decision (handle positions for actual path endpoints)
-    const srcCX = sourceNode.internals.positionAbsolute.x + (sourceNode.measured.width ?? 280) / 2
+    const srcCX = sourceNode.internals.positionAbsolute.x + getVisualWidth(sourceNode) / 2
     const srcCY = sourceNode.internals.positionAbsolute.y + (sourceNode.measured.height ?? 100) / 2
-    const tgtCX = targetNode.internals.positionAbsolute.x + (targetNode.measured.width ?? 280) / 2
+    const tgtCX = targetNode.internals.positionAbsolute.x + getVisualWidth(targetNode) / 2
     const tgtCY = targetNode.internals.positionAbsolute.y + (targetNode.measured.height ?? 100) / 2
     ;[edgePath, labelX, labelY] = getOffsetStepPath(
       sourceIntersection.x, sourceIntersection.y, sourcePos,
