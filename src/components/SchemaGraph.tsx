@@ -733,6 +733,7 @@ function GraphControls({
   onSpacingChange,
   onResetSpacing,
   hasOriginalPositions = false,
+  disabled = false,
 }: {
   layout: LayoutType
   onLayoutChange: (layout: LayoutType) => void
@@ -742,6 +743,7 @@ function GraphControls({
   onSpacingChange: (value: number) => void
   onResetSpacing: () => void
   hasOriginalPositions?: boolean
+  disabled?: boolean
 }) {
   const layouts: LayoutType[] = hasOriginalPositions
     ? ['original', 'dagre', 'layered', 'force', 'stress']
@@ -749,7 +751,7 @@ function GraphControls({
   const edgeStyles: EdgeStyle[] = ['bezier', 'step', 'straight']
 
   return (
-    <div className="absolute top-3 right-3 z-10 flex flex-col items-end gap-2 bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm rounded-lg p-2.5">
+    <div className={`absolute top-3 right-3 z-10 flex flex-col items-end gap-2 bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm rounded-lg p-2.5 transition-opacity ${disabled ? 'opacity-40 pointer-events-none' : ''}`}>
       <div className="flex gap-1">
         {layouts.map((l) => (
           <Tab
@@ -884,6 +886,7 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle }: { types
   const [searchQuery, setSearchQuery] = useState('')
   const allTypesRef = useRef(types)
   allTypesRef.current = types
+  const searchLayoutOverrideRef = useRef<{ layout: LayoutType; spacing: number } | null>(null)
 
   // Cache focus state per schema so switching back restores it
   const focusCacheRef = useRef<Map<string, { typeName: string; depth: 1 | 2 }>>(new Map())
@@ -971,6 +974,8 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle }: { types
   }, [types, setNodes, setEdges])
 
   // Search filter — rebuild graph with matching types
+  const isSearching = searchQuery.trim().length > 0
+
   const handleSearchChange = useCallback((query: string) => {
     setSearchQuery(query)
     // Exit focus mode when searching
@@ -982,7 +987,8 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle }: { types
       preFocusEdgesRef.current = null
     }
     if (!query.trim()) {
-      // Restore full graph
+      // Restore full graph with user's layout
+      searchLayoutOverrideRef.current = null
       const { nodes: newNodes, edges: newEdges } = buildNodesAndEdges(types, edgeStyleRef.current)
       setNodes(newNodes)
       setEdges(newEdges)
@@ -998,11 +1004,14 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle }: { types
     const { nodes: subsetNodes, edges: subsetEdges } = buildNodesAndEdges(filtered, edgeStyleRef.current)
     setNodes(subsetNodes)
     setEdges(subsetEdges)
+    // Force layered layout with default spacing for search results
+    searchLayoutOverrideRef.current = { layout: 'layered', spacing: DEFAULT_SPACING.layered }
     setLayoutApplied(false)
   }, [types, focusState, setNodes, setEdges])
 
   const handleSearchClear = useCallback(() => {
     setSearchQuery('')
+    searchLayoutOverrideRef.current = null
     const { nodes: newNodes, edges: newEdges } = buildNodesAndEdges(types, edgeStyleRef.current)
     setNodes(newNodes)
     setEdges(newEdges)
@@ -1062,7 +1071,12 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle }: { types
   // Initial layout after nodes are measured
   useEffect(() => {
     if (nodesInitialized && !layoutApplied) {
-      applyLayout(nodes as SchemaNode_RF[], edges, layoutType, spacing)
+      const override = searchLayoutOverrideRef.current
+      if (override) {
+        applyLayout(nodes as SchemaNode_RF[], edges, override.layout, override.spacing)
+      } else {
+        applyLayout(nodes as SchemaNode_RF[], edges, layoutType, spacing)
+      }
     }
   }, [nodesInitialized, layoutApplied, nodes, edges, layoutType, spacing, applyLayout])
 
@@ -1152,7 +1166,7 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle }: { types
 
   return (
     <div ref={containerRef} className="relative w-full h-full">
-      <GraphControls layout={layoutType} onLayoutChange={handleLayoutChange} edgeStyle={edgeStyle} onEdgeStyleChange={handleEdgeStyleChange} spacing={spacing} onSpacingChange={handleSpacingChange} onResetSpacing={handleResetSpacing} hasOriginalPositions={!!initialPositions && Object.keys(initialPositions).length > 0} />
+      <GraphControls layout={layoutType} onLayoutChange={handleLayoutChange} edgeStyle={edgeStyle} onEdgeStyleChange={handleEdgeStyleChange} spacing={spacing} onSpacingChange={handleSpacingChange} onResetSpacing={handleResetSpacing} hasOriginalPositions={!!initialPositions && Object.keys(initialPositions).length > 0} disabled={isSearching} />
       {isLayouting && (
         <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10 bg-white/90 dark:bg-gray-900/90 backdrop-blur-sm border rounded-md px-3 py-1 text-xs text-gray-500 dark:text-gray-400">
           Layouting…
