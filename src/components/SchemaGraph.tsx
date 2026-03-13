@@ -862,8 +862,12 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle }: { types
 
 
 
-  // Re-sync when types change
+  // Re-sync when types change (e.g. switching dataset/schema)
   useEffect(() => {
+    setFocusState(null)
+    setContextMenu(null)
+    preFocusNodesRef.current = null
+    preFocusEdgesRef.current = null
     const { nodes: newNodes, edges: newEdges } = buildNodesAndEdges(types, edgeStyleRef.current)
     setNodes(newNodes)
     setEdges(newEdges)
