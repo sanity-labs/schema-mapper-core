@@ -542,7 +542,7 @@ function FocusBar({ typeName, depth, connectedCount, canExpand, onClose, onToggl
       {(depth === 2 || canExpand) && (
         <Button
           mode="ghost"
-          tone={depth === 1 ? 'primary' : 'default'}
+          tone="primary"
           fontSize={1}
           padding={2}
           onClick={onToggleDepth}
