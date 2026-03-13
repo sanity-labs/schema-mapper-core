@@ -546,7 +546,7 @@ function FocusBar({ typeName, depth, connectedCount, onClose, onToggleDepth }: {
         padding={2}
         onClick={onToggleDepth}
         text={depth === 1 ? 'Expand' : 'Focus'}
-        iconRight={depth === 1 ? GrExpand : GrContract}
+        icon={depth === 1 ? GrExpand : GrContract}
       />
       <button
         onClick={onClose}
