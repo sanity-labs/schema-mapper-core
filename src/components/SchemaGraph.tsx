@@ -24,7 +24,7 @@ import '@xyflow/react/dist/style.css'
 import { Tab, Button } from '@sanity/ui'
 import { RxReset } from 'react-icons/rx'
 import { TbFocus2, TbArrowsMaximize } from 'react-icons/tb'
-import { BsArrowsAngleExpand, BsArrowsAngleContract } from 'react-icons/bs'
+import { GrContract, GrExpand } from 'react-icons/gr'
 import { useDarkMode } from '../hooks/useDarkMode'
 import SchemaNode, { SCHEMA_NODE_TYPE, type SchemaNodeData } from './SchemaNode'
 import FloatingEdge from './FloatingEdge'
@@ -546,7 +546,7 @@ function FocusBar({ typeName, depth, connectedCount, onClose, onToggleDepth }: {
         padding={2}
         onClick={onToggleDepth}
         text={depth === 1 ? 'Expand' : 'Focus'}
-        iconRight={depth === 1 ? BsArrowsAngleExpand : BsArrowsAngleContract}
+        iconRight={depth === 1 ? GrExpand : GrContract}
       />
       <button
         onClick={onClose}
