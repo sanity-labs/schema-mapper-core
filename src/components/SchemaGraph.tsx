@@ -1157,7 +1157,8 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
       return
     }
     // When switching away from original+initialFocusState, rebuild full graph
-    if (newLayout !== 'original' && initialFocusState) {
+    // BUT only if user hasn't manually focused a type (focusState is active user focus)
+    if (newLayout !== 'original' && initialFocusState && !focusState) {
       const { nodes: fullNodes, edges: fullEdges } = buildNodesAndEdges(types, edgeStyleRef.current)
       setNodes(fullNodes)
       setEdges(fullEdges)
@@ -1165,7 +1166,7 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
     } else {
       applyLayout(nodes as SchemaNode_RF[], edges, newLayout, spacingMap[newLayout])
     }
-  }, [nodes, edges, spacingMap, applyLayout, debouncedApplyLayout, initialEdgeStyle, setEdgeStyle, initialFocusState, types, setNodes, setEdges])
+  }, [nodes, edges, spacingMap, applyLayout, debouncedApplyLayout, initialEdgeStyle, setEdgeStyle, initialFocusState, focusState, types, setNodes, setEdges])
 
   const handleSpacingChange = useCallback((value: number) => {
     setSpacingMap(prev => {
