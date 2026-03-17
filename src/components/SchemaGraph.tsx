@@ -827,11 +827,22 @@ function GraphControls({
 // Inner component (needs ReactFlowProvider ancestor for hooks)
 // ---------------------------------------------------------------------------
 
-function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateChange }: { types: DiscoveredType[]; initialPositions?: Record<string, { x: number; y: number }>; initialEdgeStyle?: EdgeStyle; onStateChange?: (state: SchemaGraphState) => void }) {
+function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateChange, fitViewTrigger }: { types: DiscoveredType[]; initialPositions?: Record<string, { x: number; y: number }>; initialEdgeStyle?: EdgeStyle; onStateChange?: (state: SchemaGraphState) => void; fitViewTrigger?: number }) {
   const isDark = useDarkMode()
   const { fitView } = useReactFlow()
   const nodesInitialized = useNodesInitialized()
   const containerRef = useRef<HTMLDivElement>(null)
+
+  // Smooth reframe when container resizes (e.g. collapsible nav)
+  const fitViewTriggerRef = useRef(fitViewTrigger ?? 0)
+  useEffect(() => {
+    if (fitViewTrigger != null && fitViewTrigger !== fitViewTriggerRef.current) {
+      fitViewTriggerRef.current = fitViewTrigger
+      // Small delay to let container finish resizing
+      const timer = setTimeout(() => fitView({ padding: 0.12, duration: 300 }), 50)
+      return () => clearTimeout(timer)
+    }
+  }, [fitViewTrigger, fitView])
 
   // Fix: React Flow's NodeWrapper adds 'nopan' to draggable nodes, which blocks
   // panOnScroll wheel events over nodes. We add a capture-phase listener that
@@ -1362,9 +1373,11 @@ export interface SchemaGraphProps {
   initialPositions?: Record<string, { x: number; y: number }>
   initialEdgeStyle?: 'bezier' | 'step' | 'straight'
   onStateChange?: (state: SchemaGraphState) => void
+  /** Increment to trigger a smooth fitView (e.g. after container resize) */
+  fitViewTrigger?: number
 }
 
-export function SchemaGraph({ types, initialPositions, initialEdgeStyle, onStateChange }: SchemaGraphProps) {
+export function SchemaGraph({ types, initialPositions, initialEdgeStyle, onStateChange, fitViewTrigger }: SchemaGraphProps) {
   if (types.length === 0) {
     return (
       <div className="flex items-center justify-center w-full h-full text-gray-400 text-sm">
@@ -1376,7 +1389,7 @@ export function SchemaGraph({ types, initialPositions, initialEdgeStyle, onState
   return (
     <div style={{ width: '100%', height: '100%', minHeight: 500 }}>
       <ReactFlowProvider>
-        <SchemaGraphInner types={types} initialPositions={initialPositions} initialEdgeStyle={initialEdgeStyle} onStateChange={onStateChange} />
+        <SchemaGraphInner types={types} initialPositions={initialPositions} initialEdgeStyle={initialEdgeStyle} onStateChange={onStateChange} fitViewTrigger={fitViewTrigger} />
       </ReactFlowProvider>
     </div>
   )
