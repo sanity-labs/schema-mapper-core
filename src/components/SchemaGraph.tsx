@@ -571,9 +571,9 @@ function FocusBar({ typeName, depth, connectedCount, canExpand, canGoBack, backT
   )
 }
 
-function SearchBox({ query, onChange, onClear, resultCount, totalCount }: {
+function SearchBox({ query, onChange, onClear, resultCount, totalCount, offsetTop }: {
   query: string; onChange: (q: string) => void; onClear: () => void
-  resultCount: number; totalCount: number
+  resultCount: number; totalCount: number; offsetTop?: boolean
 }) {
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -589,7 +589,7 @@ function SearchBox({ query, onChange, onClear, resultCount, totalCount }: {
   }, [query, onClear])
 
   return (
-    <div className="absolute top-3 left-3 z-20 bg-white/90 dark:bg-gray-900/90 backdrop-blur-sm border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 flex items-center gap-2">
+    <div className={`absolute left-3 z-20 bg-white/90 dark:bg-gray-900/90 backdrop-blur-sm border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 flex items-center gap-2 ${offsetTop ? 'top-12' : 'top-3'}`}>
       <svg className="w-4 h-4 text-gray-400 dark:text-gray-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
       </svg>
@@ -1331,6 +1331,7 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
           onClear={handleSearchClear}
           resultCount={nodes.length}
           totalCount={types.length}
+          offsetTop={layoutType === 'original' && initialFocusState ? true : false}
         />
       )}
       <ReactFlow
