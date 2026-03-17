@@ -1307,7 +1307,7 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
         const hiddenCount = types.length - neighbourhood.size
         return (
           <div className="absolute top-3 left-3 z-10 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-xs px-3 py-1.5 rounded-md">
-            Showing {initialFocusState.typeName} and {initialFocusState.depth}-hop · {hiddenCount} type{hiddenCount !== 1 ? 's' : ''} not shown
+            Submitted showing <span className="font-semibold text-blue-800 dark:text-blue-200">{initialFocusState.typeName}</span> and connected types · <span className="font-semibold text-blue-800 dark:text-blue-200">{hiddenCount}</span> type{hiddenCount !== 1 ? 's' : ''} hidden
           </div>
         )
       })()}
