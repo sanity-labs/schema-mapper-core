@@ -1,6 +1,6 @@
 {
   "name": "@sanity-labs/schema-mapper-core",
-  "version": "2.3.31",
+  "version": "2.3.32",
   "description": "Shared schema graph rendering components for Sanity schema visualization",
   "main": "src/index.ts",
   "types": "src/index.ts",

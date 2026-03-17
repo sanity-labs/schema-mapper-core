@@ -24,7 +24,7 @@ import '@xyflow/react/dist/style.css'
 import { Tab, Button } from '@sanity/ui'
 import { RxReset } from 'react-icons/rx'
 import { TbFocus2, TbArrowsMaximize } from 'react-icons/tb'
-import { GrContract, GrExpand } from 'react-icons/gr'
+// GrContract/GrExpand removed — FocusBar now uses TbFocus2/TbArrowsMaximize to match context menu
 import { GoArrowLeft } from 'react-icons/go'
 import { useDarkMode } from '../hooks/useDarkMode'
 import SchemaNode, { SCHEMA_NODE_TYPE, type SchemaNodeData } from './SchemaNode'
@@ -557,7 +557,7 @@ function FocusBar({ typeName, depth, connectedCount, canExpand, canGoBack, backT
           padding={2}
           onClick={onToggleDepth}
           text={depth === 1 ? 'Expand' : 'Focus'}
-          icon={depth === 1 ? GrExpand : GrContract}
+          icon={depth === 1 ? TbArrowsMaximize : TbFocus2}
         />
       )}
       <button
@@ -1321,6 +1321,16 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
           animated: false,
         }}
         onNodeClick={(event, node) => {
+          const bounds = containerRef.current?.getBoundingClientRect()
+          if (!bounds) return
+          setContextMenu({
+            x: event.clientX - bounds.left,
+            y: event.clientY - bounds.top,
+            typeName: node.id,
+          })
+        }}
+        onNodeContextMenu={(event, node) => {
+          event.preventDefault()
           const bounds = containerRef.current?.getBoundingClientRect()
           if (!bounds) return
           setContextMenu({
