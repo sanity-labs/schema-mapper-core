@@ -1148,6 +1148,13 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
     // Restore customer's edge style when switching to Submitted
     if (newLayout === 'original' && initialEdgeStyle) {
       setEdgeStyle(initialEdgeStyle)
+      edgeStyleRef.current = initialEdgeStyle
+      // Rebuild edges with the restored style so they render correctly
+      const { nodes: rebuiltNodes, edges: rebuiltEdges } = buildNodesAndEdges(types, initialEdgeStyle)
+      setNodes(rebuiltNodes)
+      setEdges(rebuiltEdges)
+      applyLayout(rebuiltNodes, rebuiltEdges, newLayout, spacingMap[newLayout])
+      return
     }
     // When switching away from original+initialFocusState, rebuild full graph
     if (newLayout !== 'original' && initialFocusState) {
