@@ -24,7 +24,7 @@ import '@xyflow/react/dist/style.css'
 import { Tab, Button } from '@sanity/ui'
 import { RxReset } from 'react-icons/rx'
 import { TbFocus2, TbArrowsMaximize } from 'react-icons/tb'
-import { GrContract, GrExpand } from 'react-icons/gr'
+// GrContract/GrExpand removed — FocusBar now uses TbFocus2/TbArrowsMaximize to match context menu
 import { GoArrowLeft } from 'react-icons/go'
 import { useDarkMode } from '../hooks/useDarkMode'
 import SchemaNode, { SCHEMA_NODE_TYPE, type SchemaNodeData } from './SchemaNode'
@@ -557,7 +557,7 @@ function FocusBar({ typeName, depth, connectedCount, canExpand, canGoBack, backT
           padding={2}
           onClick={onToggleDepth}
           text={depth === 1 ? 'Expand' : 'Focus'}
-          icon={depth === 1 ? GrExpand : GrContract}
+          icon={depth === 1 ? TbArrowsMaximize : TbFocus2}
         />
       )}
       <button
@@ -827,11 +827,22 @@ function GraphControls({
 // Inner component (needs ReactFlowProvider ancestor for hooks)
 // ---------------------------------------------------------------------------
 
-function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateChange }: { types: DiscoveredType[]; initialPositions?: Record<string, { x: number; y: number }>; initialEdgeStyle?: EdgeStyle; onStateChange?: (state: SchemaGraphState) => void }) {
+function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateChange, fitViewTrigger, initialFocusState }: { types: DiscoveredType[]; initialPositions?: Record<string, { x: number; y: number }>; initialEdgeStyle?: EdgeStyle; onStateChange?: (state: SchemaGraphState) => void; fitViewTrigger?: number; initialFocusState?: { typeName: string; depth: 1 | 2 } }) {
   const isDark = useDarkMode()
   const { fitView } = useReactFlow()
   const nodesInitialized = useNodesInitialized()
   const containerRef = useRef<HTMLDivElement>(null)
+
+  // Smooth reframe when container resizes (e.g. collapsible nav)
+  const fitViewTriggerRef = useRef(fitViewTrigger ?? 0)
+  useEffect(() => {
+    if (fitViewTrigger != null && fitViewTrigger !== fitViewTriggerRef.current) {
+      fitViewTriggerRef.current = fitViewTrigger
+      // Small delay to let container finish resizing
+      const timer = setTimeout(() => fitView({ padding: 0.12, duration: 300 }), 50)
+      return () => clearTimeout(timer)
+    }
+  }, [fitViewTrigger, fitView])
 
   // Fix: React Flow's NodeWrapper adds 'nopan' to draggable nodes, which blocks
   // panOnScroll wheel events over nodes. We add a capture-phase listener that
@@ -1070,8 +1081,17 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
     try {
       let layoutedNodes: SchemaNode_RF[]
       if (layout === 'original' && initialPositions && Object.keys(initialPositions).length > 0) {
+        // When initialFocusState is set, filter to neighbourhood subset
+        let nodesToLayout = currentNodes
+        let edgesToSet = currentEdges
+        if (initialFocusState) {
+          const neighbourhood = getNeighbourhood(types, initialFocusState.typeName, initialFocusState.depth)
+          nodesToLayout = currentNodes.filter(n => neighbourhood.has(n.id))
+          edgesToSet = currentEdges.filter(e => neighbourhood.has(e.source) && neighbourhood.has(e.target))
+          setEdges(edgesToSet as any)
+        }
         // Restore customer's original node positions
-        layoutedNodes = currentNodes.map(n => ({
+        layoutedNodes = nodesToLayout.map(n => ({
           ...n,
           position: initialPositions[n.id] || n.position,
         }))
@@ -1093,7 +1113,7 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
     } finally {
       setIsLayouting(false)
     }
-  }, [setNodes, fitView, initialPositions])
+  }, [setNodes, setEdges, fitView, initialPositions, initialFocusState, types])
 
   const debouncedApplyLayout = useMemo(
     () => debounce(
@@ -1129,8 +1149,16 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
     if (newLayout === 'original' && initialEdgeStyle) {
       setEdgeStyle(initialEdgeStyle)
     }
-    applyLayout(nodes as SchemaNode_RF[], edges, newLayout, spacingMap[newLayout])
-  }, [nodes, edges, spacingMap, applyLayout, debouncedApplyLayout, initialEdgeStyle, setEdgeStyle])
+    // When switching away from original+initialFocusState, rebuild full graph
+    if (newLayout !== 'original' && initialFocusState) {
+      const { nodes: fullNodes, edges: fullEdges } = buildNodesAndEdges(types, edgeStyleRef.current)
+      setNodes(fullNodes)
+      setEdges(fullEdges)
+      applyLayout(fullNodes, fullEdges, newLayout, spacingMap[newLayout])
+    } else {
+      applyLayout(nodes as SchemaNode_RF[], edges, newLayout, spacingMap[newLayout])
+    }
+  }, [nodes, edges, spacingMap, applyLayout, debouncedApplyLayout, initialEdgeStyle, setEdgeStyle, initialFocusState, types, setNodes, setEdges])
 
   const handleSpacingChange = useCallback((value: number) => {
     setSpacingMap(prev => {
@@ -1267,6 +1295,15 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
           Layouting…
         </div>
       )}
+      {!focusState && layoutType === 'original' && initialFocusState && (() => {
+        const neighbourhood = getNeighbourhood(types, initialFocusState.typeName, initialFocusState.depth)
+        const hiddenCount = types.length - neighbourhood.size
+        return (
+          <div className="absolute top-3 left-3 z-10 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-xs px-3 py-1.5 rounded-md">
+            Showing {initialFocusState.typeName} and {initialFocusState.depth}-hop · {hiddenCount} type{hiddenCount !== 1 ? 's' : ''} not shown
+          </div>
+        )
+      })()}
       {focusState && (
         <FocusBar
           typeName={focusState.typeName}
@@ -1310,6 +1347,16 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
           animated: false,
         }}
         onNodeClick={(event, node) => {
+          const bounds = containerRef.current?.getBoundingClientRect()
+          if (!bounds) return
+          setContextMenu({
+            x: event.clientX - bounds.left,
+            y: event.clientY - bounds.top,
+            typeName: node.id,
+          })
+        }}
+        onNodeContextMenu={(event, node) => {
+          event.preventDefault()
           const bounds = containerRef.current?.getBoundingClientRect()
           if (!bounds) return
           setContextMenu({
@@ -1362,9 +1409,16 @@ export interface SchemaGraphProps {
   initialPositions?: Record<string, { x: number; y: number }>
   initialEdgeStyle?: 'bezier' | 'step' | 'straight'
   onStateChange?: (state: SchemaGraphState) => void
+  /** Increment to trigger a smooth fitView (e.g. after container resize) */
+  fitViewTrigger?: number
+  /** When set, the "Submitted" (original) layout shows only the focused neighbourhood */
+  initialFocusState?: {
+    typeName: string
+    depth: 1 | 2
+  }
 }
 
-export function SchemaGraph({ types, initialPositions, initialEdgeStyle, onStateChange }: SchemaGraphProps) {
+export function SchemaGraph({ types, initialPositions, initialEdgeStyle, onStateChange, fitViewTrigger, initialFocusState }: SchemaGraphProps) {
   if (types.length === 0) {
     return (
       <div className="flex items-center justify-center w-full h-full text-gray-400 text-sm">
@@ -1376,7 +1430,7 @@ export function SchemaGraph({ types, initialPositions, initialEdgeStyle, onState
   return (
     <div style={{ width: '100%', height: '100%', minHeight: 500 }}>
       <ReactFlowProvider>
-        <SchemaGraphInner types={types} initialPositions={initialPositions} initialEdgeStyle={initialEdgeStyle} onStateChange={onStateChange} />
+        <SchemaGraphInner types={types} initialPositions={initialPositions} initialEdgeStyle={initialEdgeStyle} onStateChange={onStateChange} fitViewTrigger={fitViewTrigger} initialFocusState={initialFocusState} />
       </ReactFlowProvider>
     </div>
   )
