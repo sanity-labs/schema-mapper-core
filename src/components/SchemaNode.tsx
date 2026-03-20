@@ -6,16 +6,12 @@ import React, { memo, useMemo } from 'react';
 import { Tooltip, Box, Text } from '@sanity/ui';
 import type { DiscoveredField } from '../types';
 
-// Marching ants animation for cross-dataset lozenges
+// Bounce animation for cross-dataset lozenge arrow on hover
 const crossDatasetStyles = `
 @keyframes bounceRight {
   0%, 100% { transform: translateX(0); }
   50% { transform: translateX(2px); }
 }
-@keyframes marchingAnts {
-  to { stroke-dashoffset: -14; }
-}
-.group\\/xds:hover .xds-border { animation: marchingAnts 0.6s linear infinite; }
 `;
 
 // ---------------------------------------------------------------------------
@@ -189,7 +185,7 @@ function FieldRow({
                   width="calc(100% - 1px)" height="calc(100% - 1px)"
                   rx="9999" ry="9999"
                   fill="none"
-                  className="stroke-purple-400 dark:stroke-purple-500 xds-border"
+                  className="stroke-purple-400 dark:stroke-purple-500"
                   strokeWidth="1"
                   strokeDasharray="5 4"
                 />
