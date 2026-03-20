@@ -81,6 +81,7 @@ function FieldRow({
   onReferenceClick,
   onCrossDatasetNavigate,
   visibleTypeNames,
+  sourceTypeName,
 }: {
   field: DiscoveredField;
   index: number;
@@ -89,6 +90,7 @@ function FieldRow({
   onReferenceClick?: (referenceTo: string) => void;
   onCrossDatasetNavigate?: (datasetName: string, typeName?: string, sourceTypeName?: string) => void;
   visibleTypeNames?: Set<string>;
+  sourceTypeName?: string;
 }) {
   const isCrossDataset = field.isCrossDatasetReference === true;
   const isRef = !isCrossDataset && (field.isReference || field.type === 'reference');
@@ -180,7 +182,7 @@ function FieldRow({
               className="group/xds absolute right-0 top-1/2 -translate-y-1/2 translate-x-[calc(100%+8px)] z-10 flex items-center gap-1 px-2.5 py-1 rounded-full border border-dashed border-purple-400 dark:border-purple-500 bg-purple-100 dark:bg-purple-900/50 text-purple-700 dark:text-purple-300 text-[10px] font-medium hover:bg-purple-200 dark:hover:bg-purple-800/50 transition-colors whitespace-nowrap cursor-pointer"
               onClick={(e) => {
                 e.stopPropagation();
-                onCrossDatasetNavigate?.(field.crossDatasetName!, field.referenceTo, typeName);
+                onCrossDatasetNavigate?.(field.crossDatasetName!, field.referenceTo, sourceTypeName);
               }}
             >
               <GoDatabase className="w-2.5 h-2.5" />
@@ -294,6 +296,7 @@ function SchemaNode({ data }: NodeProps<SchemaNodeType>) {
             onReferenceClick={onReferenceClick}
             onCrossDatasetNavigate={onCrossDatasetNavigate}
             visibleTypeNames={visibleTypeNames}
+            sourceTypeName={typeName}
           />
         ))}
       </div>
