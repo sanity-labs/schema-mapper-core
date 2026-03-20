@@ -1385,7 +1385,21 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
           </div>
         )
       })()}
-      {focusState && (\n        <FocusBar\n          typeName={focusState.typeName}\n          depth={focusState.depth}\n          connectedCount={nodes.length - 1}\n          canExpand={focusState.depth < 2 && getNeighbourhood(types, focusState.typeName, (focusState.depth + 1) as 0 | 1 | 2).size > getNeighbourhood(types, focusState.typeName, focusState.depth).size}\n          canFocus={focusState.depth > 0}\n          canGoBack={focusHistoryRef.current.length > 0}\n          backTypeName={focusHistoryRef.current.length > 0 ? focusHistoryRef.current[focusHistoryRef.current.length - 1] : undefined}\n          onClose={handleExitFocus}\n          onExpandDepth={handleExpandDepth}\n          onFocusDepth={handleFocusDepth}\n          onBack={handleFocusBack}\n        />\n      )}
+      {focusState && (
+        <FocusBar
+          typeName={focusState.typeName}
+          depth={focusState.depth}
+          connectedCount={nodes.length - 1}
+          canExpand={focusState.depth < 2 && getNeighbourhood(types, focusState.typeName, (focusState.depth + 1) as 0 | 1 | 2).size > getNeighbourhood(types, focusState.typeName, focusState.depth).size}
+          canFocus={focusState.depth > 0}
+          canGoBack={focusHistoryRef.current.length > 0}
+          backTypeName={focusHistoryRef.current.length > 0 ? focusHistoryRef.current[focusHistoryRef.current.length - 1] : undefined}
+          onClose={handleExitFocus}
+          onExpandDepth={handleExpandDepth}
+          onFocusDepth={handleFocusDepth}
+          onBack={handleFocusBack}
+        />
+      )}
       {!focusState && (
         <SearchBox
           query={searchQuery}
