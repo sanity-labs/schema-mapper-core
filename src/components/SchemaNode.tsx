@@ -1,6 +1,7 @@
 import { Handle, Position, type NodeProps, type Node } from '@xyflow/react';
 import { Badge } from './ui/badge';
 import { ArrowRight } from 'lucide-react';
+import { GoDatabase } from 'react-icons/go';
 import React, { memo, useMemo } from 'react';
 import type { DiscoveredField } from '../types';
 
@@ -16,6 +17,7 @@ export type SchemaNodeData = {
   hasOutgoing?: boolean;
   incomingEdgeCount?: number;
   onReferenceClick?: (referenceTo: string) => void;
+  onCrossDatasetNavigate?: (datasetName: string, typeName?: string) => void;
   visibleTypeNames?: Set<string>;
 };
 
@@ -68,6 +70,7 @@ function FieldRow({
   totalRefs,
   refIndex,
   onReferenceClick,
+  onCrossDatasetNavigate,
   visibleTypeNames,
 }: {
   field: DiscoveredField;
@@ -75,9 +78,11 @@ function FieldRow({
   totalRefs: number;
   refIndex: number; // -1 if not a reference
   onReferenceClick?: (referenceTo: string) => void;
+  onCrossDatasetNavigate?: (datasetName: string, typeName?: string) => void;
   visibleTypeNames?: Set<string>;
 }) {
-  const isRef = field.isReference || field.type === 'reference';
+  const isCrossDataset = field.isCrossDatasetReference === true;
+  const isRef = !isCrossDataset && (field.isReference || field.type === 'reference');
   const isInline = field.isInlineObject === true;
   const style = fieldBadgeStyle(isInline ? 'object' : field.type);
   const even = index % 2 === 0;
@@ -144,6 +149,22 @@ function FieldRow({
           {field.referenceTo}
         </button>
       )}
+
+      {/* Cross-dataset reference lozenge — shown for fields referencing another dataset */}
+      {isCrossDataset && field.crossDatasetName && (
+        <button
+          className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-[calc(100%+8px)] z-10 flex items-center gap-1 px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-900/50 text-purple-700 dark:text-purple-300 text-[10px] font-medium border border-dashed border-purple-300 dark:border-purple-600 hover:bg-purple-200 dark:hover:bg-purple-800/50 transition-colors whitespace-nowrap cursor-pointer"
+          onClick={(e) => {
+            e.stopPropagation();
+            onCrossDatasetNavigate?.(field.crossDatasetName!, field.referenceTo);
+          }}
+          title={`Navigate to dataset: ${field.crossDatasetName}`}
+        >
+          <GoDatabase className="w-2.5 h-2.5" />
+          <ArrowRight className="w-2 h-2" />
+          {field.crossDatasetName}
+        </button>
+      )}
     </div>
   );
 }
@@ -153,12 +174,13 @@ function FieldRow({
 // ---------------------------------------------------------------------------
 
 function SchemaNode({ data }: NodeProps<SchemaNodeType>) {
-  const { typeName, documentCount, fields, onReferenceClick, visibleTypeNames } = data;
+  const { typeName, documentCount, fields, onReferenceClick, onCrossDatasetNavigate, visibleTypeNames } = data;
 
   // Pre-compute reference indices for handle positioning
   const refFields = useMemo(
     () =>
       fields.reduce<Record<string, number>>((acc, f, _i) => {
+        if (f.isCrossDatasetReference) return acc;
         if (f.isReference || f.isInlineObject || f.type === 'reference') {
           acc[f.name] = Object.keys(acc).length;
         }
@@ -173,14 +195,20 @@ function SchemaNode({ data }: NodeProps<SchemaNodeType>) {
   const hasOrphanedRefs = useMemo(() => {
     if (!visibleTypeNames || !onReferenceClick) return false;
     return fields.some(f =>
+      !f.isCrossDatasetReference &&
       (f.isReference || f.type === 'reference') &&
       f.referenceTo &&
       !visibleTypeNames.has(f.referenceTo)
     );
   }, [fields, visibleTypeNames, onReferenceClick]);
 
+  // Check if any cross-dataset reference fields exist (need overflow for lozenges)
+  const hasCrossDatasetRefs = useMemo(() => {
+    return fields.some(f => f.isCrossDatasetReference && f.crossDatasetName);
+  }, [fields]);
+
   return (
-    <div className={"rounded-md border bg-card text-card-foreground min-w-[200px] max-w-[280px]" + (hasOrphanedRefs ? " mr-[130px]" : "")} style={{ overflow: hasOrphanedRefs ? 'visible' : 'hidden' }}>
+    <div className={"rounded-md border bg-card text-card-foreground min-w-[200px] max-w-[280px]" + (hasOrphanedRefs || hasCrossDatasetRefs ? " mr-[130px]" : "")} style={{ overflow: hasOrphanedRefs || hasCrossDatasetRefs ? 'visible' : 'hidden' }}>
       {/* ---- Invisible handles on all 4 sides for floating edge connections ---- */}
       <Handle
         type="target"
@@ -239,6 +267,7 @@ function SchemaNode({ data }: NodeProps<SchemaNodeType>) {
             totalRefs={totalRefs}
             refIndex={refFields[field.name] ?? -1}
             onReferenceClick={onReferenceClick}
+            onCrossDatasetNavigate={onCrossDatasetNavigate}
             visibleTypeNames={visibleTypeNames}
           />
         ))}

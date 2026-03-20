@@ -281,7 +281,7 @@ async function getElkLayout(spacing: number,
 
     // Source ports for reference and inline object fields (right side)
     node.data.fields.forEach((field: DiscoveredField) => {
-      if (field.isReference || field.isInlineObject || field.type === 'reference') {
+      if (!field.isCrossDatasetReference && (field.isReference || field.isInlineObject || field.type === 'reference')) {
         ports.push({
           id: `${node.id}-ref-${field.name}`,
           layoutOptions: {
@@ -668,7 +668,7 @@ function buildNodesAndEdges(
 
   types.forEach((type) => {
     type.fields.forEach((field) => {
-      const hasEdge = (field.isReference || field.isInlineObject) && field.referenceTo && typeNames.has(field.referenceTo)
+      const hasEdge = !field.isCrossDatasetReference && (field.isReference || field.isInlineObject) && field.referenceTo && typeNames.has(field.referenceTo)
       if (hasEdge) {
         if (!sourceColorMap.has(type.name)) {
           sourceColorMap.set(type.name, edgeColors[colorIdx % edgeColors.length])
@@ -827,7 +827,7 @@ function GraphControls({
 // Inner component (needs ReactFlowProvider ancestor for hooks)
 // ---------------------------------------------------------------------------
 
-function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateChange, fitViewTrigger, initialFocusState }: { types: DiscoveredType[]; initialPositions?: Record<string, { x: number; y: number }>; initialEdgeStyle?: EdgeStyle; onStateChange?: (state: SchemaGraphState) => void; fitViewTrigger?: number; initialFocusState?: { typeName: string; depth: 1 | 2 } }) {
+function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateChange, fitViewTrigger, initialFocusState, onCrossDatasetNavigate }: { types: DiscoveredType[]; initialPositions?: Record<string, { x: number; y: number }>; initialEdgeStyle?: EdgeStyle; onStateChange?: (state: SchemaGraphState) => void; fitViewTrigger?: number; initialFocusState?: { typeName: string; depth: 1 | 2 }; onCrossDatasetNavigate?: (datasetName: string, typeName?: string) => void }) {
   const isDark = useDarkMode()
   const { fitView } = useReactFlow()
   const nodesInitialized = useNodesInitialized()
@@ -938,8 +938,8 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
   const preFocusEdgesRef = useRef<SchemaEdge[] | null>(null)
 
   const { nodes: initialNodes, edges: initialEdges } = useMemo(
-    () => buildNodesAndEdges(types, edgeStyleRef.current),
-    [types],
+    () => buildNodesAndEdges(types, edgeStyleRef.current, { onCrossDatasetNavigate }),
+    [types, onCrossDatasetNavigate],
   )
 
   const [nodes, setNodes, onNodesChange] = useNodesState<SchemaNode_RF>(initialNodes)
@@ -997,6 +997,7 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
         const visibleNames = new Set(filteredTypes.map(t => t.name))
         const { nodes: subsetNodes, edges: subsetEdges } = buildNodesAndEdges(filteredTypes, edgeStyleRef.current, {
           onReferenceClick: (ref: string) => handleReferenceNavigateRef.current(ref),
+          onCrossDatasetNavigate,
           visibleTypeNames: visibleNames,
         })
         setNodes(subsetNodes)
@@ -1008,11 +1009,11 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
     }
 
     setFocusState(null)
-    const { nodes: newNodes, edges: newEdges } = buildNodesAndEdges(types, edgeStyleRef.current)
+    const { nodes: newNodes, edges: newEdges } = buildNodesAndEdges(types, edgeStyleRef.current, { onCrossDatasetNavigate })
     setNodes(newNodes)
     setEdges(newEdges)
     setLayoutApplied(false)
-  }, [types, setNodes, setEdges])
+  }, [types, setNodes, setEdges, onCrossDatasetNavigate])
 
   // Search filter — rebuild graph with matching types
   const isSearching = searchQuery.trim().length > 0
@@ -1040,7 +1041,7 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
     if (!query.trim()) {
       // Restore full graph with user's layout
       searchLayoutOverrideRef.current = null
-      const { nodes: newNodes, edges: newEdges } = buildNodesAndEdges(types, edgeStyleRef.current)
+      const { nodes: newNodes, edges: newEdges } = buildNodesAndEdges(types, edgeStyleRef.current, { onCrossDatasetNavigate })
       setNodes(newNodes)
       setEdges(newEdges)
       setLayoutApplied(false)
@@ -1052,7 +1053,7 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
       (t.title && t.title.toLowerCase().includes(q)) ||
       t.fields.some(f => f.name.toLowerCase().includes(q))
     )
-    const { nodes: subsetNodes, edges: subsetEdges } = buildNodesAndEdges(filtered, edgeStyleRef.current)
+    const { nodes: subsetNodes, edges: subsetEdges } = buildNodesAndEdges(filtered, edgeStyleRef.current, { onCrossDatasetNavigate })
     setNodes(subsetNodes)
     setEdges(subsetEdges)
     // Force layered layout with default spacing for search results
@@ -1063,11 +1064,11 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
   const handleSearchClear = useCallback(() => {
     setSearchQuery('')
     searchLayoutOverrideRef.current = null
-    const { nodes: newNodes, edges: newEdges } = buildNodesAndEdges(types, edgeStyleRef.current)
+    const { nodes: newNodes, edges: newEdges } = buildNodesAndEdges(types, edgeStyleRef.current, { onCrossDatasetNavigate })
     setNodes(newNodes)
     setEdges(newEdges)
     setLayoutApplied(false)
-  }, [types, setNodes, setEdges])
+  }, [types, setNodes, setEdges, onCrossDatasetNavigate])
 
   // Apply ELK layout once nodes have been measured
   const applyLayout = useCallback(async (
@@ -1150,7 +1151,7 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
       setEdgeStyle(initialEdgeStyle)
       edgeStyleRef.current = initialEdgeStyle
       // Rebuild edges with the restored style so they render correctly
-      const { nodes: rebuiltNodes, edges: rebuiltEdges } = buildNodesAndEdges(types, initialEdgeStyle)
+      const { nodes: rebuiltNodes, edges: rebuiltEdges } = buildNodesAndEdges(types, initialEdgeStyle, { onCrossDatasetNavigate })
       setNodes(rebuiltNodes)
       setEdges(rebuiltEdges)
       applyLayout(rebuiltNodes, rebuiltEdges, newLayout, spacingMap[newLayout])
@@ -1159,7 +1160,7 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
     // When switching away from original+initialFocusState, rebuild full graph
     // BUT only if user hasn't manually focused a type (focusState is active user focus)
     if (newLayout !== 'original' && initialFocusState && !focusState) {
-      const { nodes: fullNodes, edges: fullEdges } = buildNodesAndEdges(types, edgeStyleRef.current)
+      const { nodes: fullNodes, edges: fullEdges } = buildNodesAndEdges(types, edgeStyleRef.current, { onCrossDatasetNavigate })
       setNodes(fullNodes)
       setEdges(fullEdges)
       applyLayout(fullNodes, fullEdges, newLayout, spacingMap[newLayout])
@@ -1188,7 +1189,7 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
     if (searchQuery.trim()) {
       setSearchQuery('')
       searchLayoutOverrideRef.current = null
-      const { nodes: fullNodes, edges: fullEdges } = buildNodesAndEdges(types, edgeStyleRef.current)
+      const { nodes: fullNodes, edges: fullEdges } = buildNodesAndEdges(types, edgeStyleRef.current, { onCrossDatasetNavigate })
       preFocusNodesRef.current = fullNodes
       preFocusEdgesRef.current = fullEdges as SchemaEdge[]
     } else if (!focusState) {
@@ -1217,6 +1218,7 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
     const visibleNames = new Set(filteredTypes.map(t => t.name))
     const { nodes: subsetNodes, edges: subsetEdges } = buildNodesAndEdges(filteredTypes, edgeStyleRef.current, {
       onReferenceClick: (ref: string) => handleReferenceNavigateRef.current(ref),
+      onCrossDatasetNavigate,
       visibleTypeNames: visibleNames,
     })
 
@@ -1225,7 +1227,7 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
 
     // Re-layout the subset
     setLayoutApplied(false)
-  }, [types, nodes, edges, focusState, searchQuery, layoutType, spacing, setNodes, setEdges])
+  }, [types, nodes, edges, focusState, searchQuery, layoutType, spacing, setNodes, setEdges, onCrossDatasetNavigate])
 
   // Ref-stable callback for reference navigation (avoids circular deps)
   const handleReferenceNavigateRef = useRef<(referenceTo: string) => void>(() => {})
@@ -1425,9 +1427,11 @@ export interface SchemaGraphProps {
     typeName: string
     depth: 1 | 2
   }
+  /** Callback when a cross-dataset reference lozenge is clicked */
+  onCrossDatasetNavigate?: (datasetName: string, typeName?: string) => void
 }
 
-export function SchemaGraph({ types, initialPositions, initialEdgeStyle, onStateChange, fitViewTrigger, initialFocusState }: SchemaGraphProps) {
+export function SchemaGraph({ types, initialPositions, initialEdgeStyle, onStateChange, fitViewTrigger, initialFocusState, onCrossDatasetNavigate }: SchemaGraphProps) {
   if (types.length === 0) {
     return (
       <div className="flex items-center justify-center w-full h-full text-gray-400 text-sm">
@@ -1439,7 +1443,7 @@ export function SchemaGraph({ types, initialPositions, initialEdgeStyle, onState
   return (
     <div style={{ width: '100%', height: '100%', minHeight: 500 }}>
       <ReactFlowProvider>
-        <SchemaGraphInner types={types} initialPositions={initialPositions} initialEdgeStyle={initialEdgeStyle} onStateChange={onStateChange} fitViewTrigger={fitViewTrigger} initialFocusState={initialFocusState} />
+        <SchemaGraphInner types={types} initialPositions={initialPositions} initialEdgeStyle={initialEdgeStyle} onStateChange={onStateChange} fitViewTrigger={fitViewTrigger} initialFocusState={initialFocusState} onCrossDatasetNavigate={onCrossDatasetNavigate} />
       </ReactFlowProvider>
     </div>
   )
