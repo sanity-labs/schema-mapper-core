@@ -177,26 +177,15 @@ function FieldRow({
             portal
           >
             <button
-              className="group/xds absolute right-0 top-1/2 -translate-y-1/2 translate-x-[calc(100%+8px)] z-10 flex items-center gap-1 px-2.5 py-1 rounded-full bg-purple-100 dark:bg-purple-900/50 text-purple-700 dark:text-purple-300 text-[10px] font-medium hover:bg-purple-200 dark:hover:bg-purple-800/50 transition-colors whitespace-nowrap cursor-pointer relative overflow-visible"
+              className="group/xds absolute right-0 top-1/2 -translate-y-1/2 translate-x-[calc(100%+8px)] z-10 flex items-center gap-1 px-2.5 py-1 rounded-full border border-dashed border-purple-400 dark:border-purple-500 bg-purple-100 dark:bg-purple-900/50 text-purple-700 dark:text-purple-300 text-[10px] font-medium hover:bg-purple-200 dark:hover:bg-purple-800/50 transition-colors whitespace-nowrap cursor-pointer"
               onClick={(e) => {
                 e.stopPropagation();
                 onCrossDatasetNavigate?.(field.crossDatasetName!, field.referenceTo);
               }}
             >
-              <svg className="absolute inset-[-0.5px] w-[calc(100%+1px)] h-[calc(100%+1px)] pointer-events-none" aria-hidden>
-                <rect
-                  x="0.5" y="0.5"
-                  width="calc(100% - 1px)" height="calc(100% - 1px)"
-                  rx="9999" ry="9999"
-                  fill="none"
-                  className="stroke-purple-400 dark:stroke-purple-500"
-                  strokeWidth="1"
-                  strokeDasharray="5 4"
-                />
-              </svg>
-              <GoDatabase className="w-2.5 h-2.5 relative" />
-              <ArrowRight className="w-2 h-2 relative group-hover/xds:animate-[bounceRight_1s_ease-in-out_infinite]" />
-              <span className="relative">{field.crossDatasetName}</span>
+              <GoDatabase className="w-2.5 h-2.5" />
+              <ArrowRight className="w-2 h-2 group-hover/xds:animate-[bounceRight_1s_ease-in-out_infinite]" />
+              <span>{field.crossDatasetName}</span>
             </button>
           </Tooltip>
         </>
