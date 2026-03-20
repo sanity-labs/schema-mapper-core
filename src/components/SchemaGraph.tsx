@@ -827,7 +827,7 @@ function GraphControls({
 // Inner component (needs ReactFlowProvider ancestor for hooks)
 // ---------------------------------------------------------------------------
 
-function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateChange, fitViewTrigger, initialFocusState, onCrossDatasetNavigate }: { types: DiscoveredType[]; initialPositions?: Record<string, { x: number; y: number }>; initialEdgeStyle?: EdgeStyle; onStateChange?: (state: SchemaGraphState) => void; fitViewTrigger?: number; initialFocusState?: { typeName: string; depth: 1 | 2 }; onCrossDatasetNavigate?: (datasetName: string, typeName?: string) => void }) {
+function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateChange, fitViewTrigger, initialFocusState, onCrossDatasetNavigate, pendingFocusType }: { types: DiscoveredType[]; initialPositions?: Record<string, { x: number; y: number }>; initialEdgeStyle?: EdgeStyle; onStateChange?: (state: SchemaGraphState) => void; fitViewTrigger?: number; initialFocusState?: { typeName: string; depth: 1 | 2 }; onCrossDatasetNavigate?: (datasetName: string, typeName?: string) => void; pendingFocusType?: string | null }) {
   const isDark = useDarkMode()
   const { fitView } = useReactFlow()
   const nodesInitialized = useNodesInitialized()
@@ -928,6 +928,21 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
   const prevTypesKeyRef = useRef<string>(typesKey(types))
 
   const focusHistoryRef = useRef<string[]>([]) // stack of previous focusedType names
+
+  // Handle programmatic focus from cross-dataset navigation
+  const pendingFocusHandledRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!pendingFocusType || pendingFocusType === pendingFocusHandledRef.current) return
+    // Check if the target type exists in current types
+    const targetExists = types.some(t => t.name === pendingFocusType)
+    if (targetExists) {
+      pendingFocusHandledRef.current = pendingFocusType
+      // Apply focus with a small delay to let layout settle
+      setTimeout(() => {
+        setFocusState({ typeName: pendingFocusType, depth: 1 })
+      }, 300)
+    }
+  }, [pendingFocusType, types])
 
   const [contextMenu, setContextMenu] = useState<{
     x: number
@@ -1429,9 +1444,11 @@ export interface SchemaGraphProps {
   }
   /** Callback when a cross-dataset reference lozenge is clicked */
   onCrossDatasetNavigate?: (datasetName: string, typeName?: string) => void
+  /** When set, programmatically focuses on this type (used for cross-dataset navigation) */
+  pendingFocusType?: string | null
 }
 
-export function SchemaGraph({ types, initialPositions, initialEdgeStyle, onStateChange, fitViewTrigger, initialFocusState, onCrossDatasetNavigate }: SchemaGraphProps) {
+export function SchemaGraph({ types, initialPositions, initialEdgeStyle, onStateChange, fitViewTrigger, initialFocusState, onCrossDatasetNavigate, pendingFocusType }: SchemaGraphProps) {
   if (types.length === 0) {
     return (
       <div className="flex items-center justify-center w-full h-full text-gray-400 text-sm">
@@ -1443,7 +1460,7 @@ export function SchemaGraph({ types, initialPositions, initialEdgeStyle, onState
   return (
     <div style={{ width: '100%', height: '100%', minHeight: 500 }}>
       <ReactFlowProvider>
-        <SchemaGraphInner types={types} initialPositions={initialPositions} initialEdgeStyle={initialEdgeStyle} onStateChange={onStateChange} fitViewTrigger={fitViewTrigger} initialFocusState={initialFocusState} onCrossDatasetNavigate={onCrossDatasetNavigate} />
+        <SchemaGraphInner types={types} initialPositions={initialPositions} initialEdgeStyle={initialEdgeStyle} onStateChange={onStateChange} fitViewTrigger={fitViewTrigger} initialFocusState={initialFocusState} onCrossDatasetNavigate={onCrossDatasetNavigate} pendingFocusType={pendingFocusType} />
       </ReactFlowProvider>
     </div>
   )

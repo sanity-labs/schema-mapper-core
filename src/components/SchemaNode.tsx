@@ -166,7 +166,11 @@ function FieldRow({
           <Tooltip
             content={
               <Box padding={2}>
-                <Text size={1}>{field.crossDatasetTooltip || field.crossDatasetName}</Text>
+                <Text size={1}>
+                  {field.crossDatasetTooltip ? (
+                    <span dangerouslySetInnerHTML={{ __html: field.crossDatasetTooltip }} />
+                  ) : field.crossDatasetName}
+                </Text>
               </Box>
             }
             placement="top"
