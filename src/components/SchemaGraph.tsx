@@ -841,7 +841,7 @@ function GraphControls({
 // Inner component (needs ReactFlowProvider ancestor for hooks)
 // ---------------------------------------------------------------------------
 
-function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateChange, fitViewTrigger, initialFocusState, onCrossDatasetNavigate, pendingFocusType, pendingFocusDepth = 0, restoreViewport }: { types: DiscoveredType[]; initialPositions?: Record<string, { x: number; y: number }>; initialEdgeStyle?: EdgeStyle; onStateChange?: (state: SchemaGraphState) => void; fitViewTrigger?: number; initialFocusState?: { typeName: string; depth: 0 | 1 | 2 }; onCrossDatasetNavigate?: (datasetName: string, typeName?: string) => void; pendingFocusType?: string | null; pendingFocusDepth?: 0 | 1 | 2; restoreViewport?: { x: number; y: number; zoom: number } | null }) {
+function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateChange, fitViewTrigger, initialFocusState, onCrossDatasetNavigate, pendingFocusType, pendingFocusDepth = 0, onViewportChange, restoreViewport }: { types: DiscoveredType[]; initialPositions?: Record<string, { x: number; y: number }>; initialEdgeStyle?: EdgeStyle; onStateChange?: (state: SchemaGraphState) => void; fitViewTrigger?: number; initialFocusState?: { typeName: string; depth: 0 | 1 | 2 }; onCrossDatasetNavigate?: (datasetName: string, typeName?: string) => void; pendingFocusType?: string | null; pendingFocusDepth?: 0 | 1 | 2; onViewportChange?: (viewport: { x: number; y: number; zoom: number }) => void; restoreViewport?: { x: number; y: number; zoom: number } | null }) {
   const isDark = useDarkMode()
   const { fitView, getViewport, setViewport } = useReactFlow()
   const nodesInitialized = useNodesInitialized()
@@ -964,7 +964,14 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
   }, [pendingFocusType, pendingFocusDepth, types])
 
   // Restore viewport from back navigation
+  // Set skipFitView SYNCHRONOUSLY during render so it's true before any layout effect fires
   const restoreViewportHandledRef = useRef<string | null>(null)
+  if (restoreViewport) {
+    const key = `${restoreViewport.x},${restoreViewport.y},${restoreViewport.zoom}`
+    if (key !== restoreViewportHandledRef.current) {
+      skipFitViewRef.current = true
+    }
+  }
   useEffect(() => {
     if (!restoreViewport) {
       skipFitViewRef.current = false
@@ -973,8 +980,6 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
     const key = `${restoreViewport.x},${restoreViewport.y},${restoreViewport.zoom}`
     if (key === restoreViewportHandledRef.current) return
     restoreViewportHandledRef.current = key
-    // Tell applyLayout to skip fitView — we'll restore viewport ourselves
-    skipFitViewRef.current = true
     // Wait for layout to settle, then restore viewport
     setTimeout(() => {
       setViewport(restoreViewport, { duration: 300 })
@@ -1074,9 +1079,13 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
 
   // Track viewport continuously for navigation save/restore
   const viewportRef = useRef<{ x: number; y: number; zoom: number }>({ x: 0, y: 0, zoom: 1 })
+  const onViewportChangeRef = useRef<((v: { x: number; y: number; zoom: number }) => void) | null>(null)
+  onViewportChangeRef.current = onViewportChange ?? null
   const skipFitViewRef = useRef(false)
   const handleMoveEnd = useCallback((_: any, viewport: { x: number; y: number; zoom: number }) => {
     viewportRef.current = viewport
+    // Update parent's viewport ref without triggering full state change
+    onViewportChangeRef.current?.(viewport)
   }, [])
 
   // Notify parent of state changes
@@ -1508,11 +1517,13 @@ export interface SchemaGraphProps {
   pendingFocusType?: string | null
   /** Depth for pendingFocusType (default: 0) */
   pendingFocusDepth?: 0 | 1 | 2
+  /** Called on every viewport change (pan/zoom end) — use for saving viewport without triggering re-renders */
+  onViewportChange?: (viewport: { x: number; y: number; zoom: number }) => void
   /** When set, restores this viewport position (used for back navigation) */
   restoreViewport?: { x: number; y: number; zoom: number } | null
 }
 
-export function SchemaGraph({ types, initialPositions, initialEdgeStyle, onStateChange, fitViewTrigger, initialFocusState, onCrossDatasetNavigate, pendingFocusType, pendingFocusDepth, restoreViewport }: SchemaGraphProps) {
+export function SchemaGraph({ types, initialPositions, initialEdgeStyle, onStateChange, fitViewTrigger, initialFocusState, onCrossDatasetNavigate, pendingFocusType, pendingFocusDepth, onViewportChange, restoreViewport }: SchemaGraphProps) {
   if (types.length === 0) {
     return (
       <div className="flex items-center justify-center w-full h-full text-gray-400 text-sm">
@@ -1524,7 +1535,7 @@ export function SchemaGraph({ types, initialPositions, initialEdgeStyle, onState
   return (
     <div style={{ width: '100%', height: '100%', minHeight: 500 }}>
       <ReactFlowProvider>
-        <SchemaGraphInner types={types} initialPositions={initialPositions} initialEdgeStyle={initialEdgeStyle} onStateChange={onStateChange} fitViewTrigger={fitViewTrigger} initialFocusState={initialFocusState} onCrossDatasetNavigate={onCrossDatasetNavigate} pendingFocusType={pendingFocusType} pendingFocusDepth={pendingFocusDepth} restoreViewport={restoreViewport} />
+        <SchemaGraphInner types={types} initialPositions={initialPositions} initialEdgeStyle={initialEdgeStyle} onStateChange={onStateChange} fitViewTrigger={fitViewTrigger} initialFocusState={initialFocusState} onCrossDatasetNavigate={onCrossDatasetNavigate} pendingFocusType={pendingFocusType} pendingFocusDepth={pendingFocusDepth} onViewportChange={onViewportChange} restoreViewport={restoreViewport} />
       </ReactFlowProvider>
     </div>
   )
