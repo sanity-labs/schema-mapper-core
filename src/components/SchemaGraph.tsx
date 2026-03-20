@@ -964,6 +964,8 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
   }, [pendingFocusType, pendingFocusDepth, types])
 
   // Restore viewport from back navigation
+  // skipFitViewRef declared here (before synchronous check) to avoid TDZ error
+  const skipFitViewRef = useRef(false)
   // Set skipFitView SYNCHRONOUSLY during render so it's true before any layout effect fires
   const restoreViewportHandledRef = useRef<string | null>(null)
   if (restoreViewport) {
@@ -1081,7 +1083,6 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
   const viewportRef = useRef<{ x: number; y: number; zoom: number }>({ x: 0, y: 0, zoom: 1 })
   const onViewportChangeRef = useRef<((v: { x: number; y: number; zoom: number }) => void) | null>(null)
   onViewportChangeRef.current = onViewportChange ?? null
-  const skipFitViewRef = useRef(false)
   const handleMoveEnd = useCallback((_: any, viewport: { x: number; y: number; zoom: number }) => {
     viewportRef.current = viewport
     // Update parent's viewport ref without triggering full state change
