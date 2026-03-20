@@ -3,7 +3,20 @@ import { Badge } from './ui/badge';
 import { ArrowRight } from 'lucide-react';
 import { GoDatabase } from 'react-icons/go';
 import React, { memo, useMemo } from 'react';
+import { Tooltip, Box, Text } from '@sanity/ui';
 import type { DiscoveredField } from '../types';
+
+// Marching ants animation for cross-dataset lozenges
+const crossDatasetStyles = `
+@keyframes bounceRight {
+  0%, 100% { transform: translateX(0); }
+  50% { transform: translateX(2px); }
+}
+@keyframes marchingAnts {
+  to { stroke-dashoffset: -14; }
+}
+.group\\/xds:hover .xds-border { animation: marchingAnts 0.6s linear infinite; }
+`;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -150,20 +163,43 @@ function FieldRow({
         </button>
       )}
 
-      {/* Cross-dataset reference lozenge — shown for fields referencing another dataset */}
+      {/* Cross-dataset reference lozenge — shown for fields referencing another dataset/project */}
       {isCrossDataset && field.crossDatasetName && (
-        <button
-          className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-[calc(100%+8px)] z-10 flex items-center gap-1 px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-900/50 text-purple-700 dark:text-purple-300 text-[10px] font-medium border border-dashed border-purple-300 dark:border-purple-600 hover:bg-purple-200 dark:hover:bg-purple-800/50 transition-colors whitespace-nowrap cursor-pointer"
-          onClick={(e) => {
-            e.stopPropagation();
-            onCrossDatasetNavigate?.(field.crossDatasetName!, field.referenceTo);
-          }}
-          title={`Navigate to dataset: ${field.crossDatasetName}`}
-        >
-          <GoDatabase className="w-2.5 h-2.5" />
-          <ArrowRight className="w-2 h-2" />
-          {field.crossDatasetName}
-        </button>
+        <>
+          <style dangerouslySetInnerHTML={{ __html: crossDatasetStyles }} />
+          <Tooltip
+            content={
+              <Box padding={2}>
+                <Text size={1}>{field.crossDatasetTooltip || field.crossDatasetName}</Text>
+              </Box>
+            }
+            placement="top"
+            portal
+          >
+            <button
+              className="group/xds absolute right-0 top-1/2 -translate-y-1/2 translate-x-[calc(100%+8px)] z-10 flex items-center gap-1 px-2.5 py-1 rounded-full bg-purple-100 dark:bg-purple-900/50 text-purple-700 dark:text-purple-300 text-[10px] font-medium hover:bg-purple-200 dark:hover:bg-purple-800/50 transition-colors whitespace-nowrap cursor-pointer relative overflow-visible"
+              onClick={(e) => {
+                e.stopPropagation();
+                onCrossDatasetNavigate?.(field.crossDatasetName!, field.referenceTo);
+              }}
+            >
+              <svg className="absolute inset-[-0.5px] w-[calc(100%+1px)] h-[calc(100%+1px)] pointer-events-none" aria-hidden>
+                <rect
+                  x="0.5" y="0.5"
+                  width="calc(100% - 1px)" height="calc(100% - 1px)"
+                  rx="9999" ry="9999"
+                  fill="none"
+                  className="stroke-purple-400 dark:stroke-purple-500 xds-border"
+                  strokeWidth="1"
+                  strokeDasharray="5 4"
+                />
+              </svg>
+              <GoDatabase className="w-2.5 h-2.5 relative" />
+              <ArrowRight className="w-2 h-2 relative group-hover/xds:animate-[bounceRight_1s_ease-in-out_infinite]" />
+              <span className="relative">{field.crossDatasetName}</span>
+            </button>
+          </Tooltip>
+        </>
       )}
     </div>
   );
