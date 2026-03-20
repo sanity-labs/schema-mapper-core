@@ -953,8 +953,15 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
   // Handle programmatic focus from cross-dataset navigation
   const pendingFocusHandledRef = useRef<string | null>(null)
   const handleFocusRef = useRef<((typeName: string, depth: 1 | 2) => void) | null>(null)
+  const handleExitFocusRef = useRef<(() => void) | null>(null)
   useEffect(() => {
     if (!pendingFocusType || pendingFocusType === pendingFocusHandledRef.current) return
+    // Special sentinel: clear focus and restore full graph
+    if (pendingFocusType === '__clear__') {
+      pendingFocusHandledRef.current = pendingFocusType
+      handleExitFocusRef.current?.()
+      return
+    }
     // Check if the target type exists in current types
     const targetExists = types.some(t => t.name === pendingFocusType)
     if (targetExists && handleFocusRef.current) {
@@ -1306,6 +1313,7 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
     setLayoutApplied(false)
   }, [types, nodes, edges, focusState, searchQuery, layoutType, spacing, setNodes, setEdges])
   handleFocusRef.current = handleFocus
+  handleExitFocusRef.current = handleExitFocus
 
   // Ref-stable callback for reference navigation (avoids circular deps)
   const handleReferenceNavigateRef = useRef<(referenceTo: string) => void>(() => {})
