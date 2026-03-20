@@ -57,7 +57,7 @@ export interface PDFExportProps {
     orgName?: string
     workspaceName?: string
     focusedType?: string
-    focusDepth?: 1 | 2
+    focusDepth?: 0 | 1 | 2
     totalTypeCount?: number
   }
 }
@@ -638,7 +638,7 @@ export function SchemaGraphPDF({ nodes, edges, context }: PDFExportProps) {
                 gap: 3,
               }}>
                 <Text style={{ fontSize: 5, fontFamily: 'Helvetica-Bold', color: '#5b21b6' }}>
-                  Focused: {context.focusedType} ({context.focusDepth === 1 ? '1-hop' : '2-hop'})
+                  Focused: {context.focusedType}{context.focusDepth ? ` (${context.focusDepth}-hop)` : ''}
                 </Text>
               </View>
             )}
