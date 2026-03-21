@@ -7,6 +7,7 @@ export type DiscoveredField = {
   isArray?: boolean
   isInlineObject?: boolean
   isCrossDatasetReference?: boolean
+  isGlobalReference?: boolean
   crossDatasetName?: string
   crossDatasetTooltip?: string
 }
