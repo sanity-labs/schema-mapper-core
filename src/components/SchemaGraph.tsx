@@ -1313,7 +1313,6 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
     setLayoutApplied(false)
   }, [types, nodes, edges, focusState, searchQuery, layoutType, spacing, setNodes, setEdges])
   handleFocusRef.current = handleFocus
-  handleExitFocusRef.current = handleExitFocus
 
   // Ref-stable callback for reference navigation (avoids circular deps)
   const handleReferenceNavigateRef = useRef<(referenceTo: string) => void>(() => {})
@@ -1366,6 +1365,7 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
       setLayoutApplied(false)
     }
   }, [setNodes, setEdges])
+  handleExitFocusRef.current = handleExitFocus
 
   const handleExpandDepth = useCallback(() => {
     if (!focusState) return
