@@ -844,7 +844,7 @@ function GraphControls({
 // Inner component (needs ReactFlowProvider ancestor for hooks)
 // ---------------------------------------------------------------------------
 
-function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateChange, fitViewTrigger, initialFocusState, onCrossDatasetNavigate, pendingFocusType, pendingFocusDepth = 0, onViewportChange, restoreViewport }: { types: DiscoveredType[]; initialPositions?: Record<string, { x: number; y: number }>; initialEdgeStyle?: EdgeStyle; onStateChange?: (state: SchemaGraphState) => void; fitViewTrigger?: number; initialFocusState?: { typeName: string; depth: 0 | 1 | 2 }; onCrossDatasetNavigate?: (datasetName: string, typeName?: string, sourceTypeName?: string) => void; pendingFocusType?: string | null; pendingFocusDepth?: 0 | 1 | 2; onViewportChange?: (viewport: { x: number; y: number; zoom: number }) => void; restoreViewport?: { x: number; y: number; zoom: number } | null }) {
+function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateChange, fitViewTrigger, initialFocusState, onCrossDatasetNavigate, pendingFocusType, pendingFocusDepth = 0, onViewportChange, restoreViewport, viewportNudge }: { types: DiscoveredType[]; initialPositions?: Record<string, { x: number; y: number }>; initialEdgeStyle?: EdgeStyle; onStateChange?: (state: SchemaGraphState) => void; fitViewTrigger?: number; initialFocusState?: { typeName: string; depth: 0 | 1 | 2 }; onCrossDatasetNavigate?: (datasetName: string, typeName?: string, sourceTypeName?: string) => void; pendingFocusType?: string | null; pendingFocusDepth?: 0 | 1 | 2; onViewportChange?: (viewport: { x: number; y: number; zoom: number }) => void; restoreViewport?: { x: number; y: number; zoom: number } | null; viewportNudge?: { dy: number; trigger: number } | null }) {
   const isDark = useDarkMode()
   const { fitView, getViewport, setViewport } = useReactFlow()
   const nodesInitialized = useNodesInitialized()
@@ -1000,6 +1000,15 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
     }, 500)
   }, [restoreViewport, setViewport])
 
+
+  // Instant viewport nudge (for nav collapse/expand center compensation)
+  const nudgeTriggerRef = useRef(0)
+  useEffect(() => {
+    if (!viewportNudge || viewportNudge.trigger === nudgeTriggerRef.current) return
+    nudgeTriggerRef.current = viewportNudge.trigger
+    const vp = getViewport()
+    setViewport({ x: vp.x, y: vp.y + viewportNudge.dy, zoom: vp.zoom }, { duration: 0 })
+  }, [viewportNudge, getViewport, setViewport])
   const [contextMenu, setContextMenu] = useState<{
     x: number
     y: number
@@ -1533,9 +1542,11 @@ export interface SchemaGraphProps {
   onViewportChange?: (viewport: { x: number; y: number; zoom: number }) => void
   /** When set, restores this viewport position (used for back navigation) */
   restoreViewport?: { x: number; y: number; zoom: number } | null
+  /** Instant viewport Y nudge (for nav collapse/expand center compensation). Increment trigger to apply. */
+  viewportNudge?: { dy: number; trigger: number } | null
 }
 
-export function SchemaGraph({ types, initialPositions, initialEdgeStyle, onStateChange, fitViewTrigger, initialFocusState, onCrossDatasetNavigate, pendingFocusType, pendingFocusDepth, onViewportChange, restoreViewport }: SchemaGraphProps) {
+export function SchemaGraph({ types, initialPositions, initialEdgeStyle, onStateChange, fitViewTrigger, initialFocusState, onCrossDatasetNavigate, pendingFocusType, pendingFocusDepth, onViewportChange, restoreViewport, viewportNudge }: SchemaGraphProps) {
   if (types.length === 0) {
     return (
       <div className="flex items-center justify-center w-full h-full text-gray-400 text-sm">
@@ -1547,7 +1558,7 @@ export function SchemaGraph({ types, initialPositions, initialEdgeStyle, onState
   return (
     <div style={{ width: '100%', height: '100%', minHeight: 500 }}>
       <ReactFlowProvider>
-        <SchemaGraphInner types={types} initialPositions={initialPositions} initialEdgeStyle={initialEdgeStyle} onStateChange={onStateChange} fitViewTrigger={fitViewTrigger} initialFocusState={initialFocusState} onCrossDatasetNavigate={onCrossDatasetNavigate} pendingFocusType={pendingFocusType} pendingFocusDepth={pendingFocusDepth} onViewportChange={onViewportChange} restoreViewport={restoreViewport} />
+        <SchemaGraphInner types={types} initialPositions={initialPositions} initialEdgeStyle={initialEdgeStyle} onStateChange={onStateChange} fitViewTrigger={fitViewTrigger} initialFocusState={initialFocusState} onCrossDatasetNavigate={onCrossDatasetNavigate} pendingFocusType={pendingFocusType} pendingFocusDepth={pendingFocusDepth} onViewportChange={onViewportChange} restoreViewport={restoreViewport} viewportNudge={viewportNudge} />
       </ReactFlowProvider>
     </div>
   )
