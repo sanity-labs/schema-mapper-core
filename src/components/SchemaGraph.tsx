@@ -952,7 +952,7 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
 
   // Handle programmatic focus from cross-dataset navigation
   const pendingFocusHandledRef = useRef<string | null>(null)
-  const handleFocusRef = useRef<((typeName: string, depth: 1 | 2) => void) | null>(null)
+  const handleFocusRef = useRef<((typeName: string, depth: 0 | 1 | 2) => void) | null>(null)
   const handleExitFocusRef = useRef<(() => void) | null>(null)
   useEffect(() => {
     if (!pendingFocusType || pendingFocusType === pendingFocusHandledRef.current) return
