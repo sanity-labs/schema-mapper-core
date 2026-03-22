@@ -9,6 +9,7 @@ export type DiscoveredField = {
   isCrossDatasetReference?: boolean
   isGlobalReference?: boolean
   crossDatasetName?: string
+  crossDatasetProjectId?: string  // Raw project ID for global refs (before display name resolution)
   crossDatasetTooltip?: string
 }
 
