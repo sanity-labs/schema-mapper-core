@@ -844,7 +844,7 @@ function GraphControls({
 // Inner component (needs ReactFlowProvider ancestor for hooks)
 // ---------------------------------------------------------------------------
 
-function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateChange, fitViewTrigger, initialFocusState, onCrossDatasetNavigate, pendingFocusType, pendingFocusDepth = 0, onViewportChange, restoreViewport, viewportNudge }: { types: DiscoveredType[]; initialPositions?: Record<string, { x: number; y: number }>; initialEdgeStyle?: EdgeStyle; onStateChange?: (state: SchemaGraphState) => void; fitViewTrigger?: number; initialFocusState?: { typeName: string; depth: 0 | 1 | 2 }; onCrossDatasetNavigate?: (datasetName: string, typeName?: string, sourceTypeName?: string, projectId?: string) => void; pendingFocusType?: string | null; pendingFocusDepth?: 0 | 1 | 2; onViewportChange?: (viewport: { x: number; y: number; zoom: number }) => void; restoreViewport?: { x: number; y: number; zoom: number } | null; viewportNudge?: { dy: number; trigger: number } | null }) {
+function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateChange, fitViewTrigger, initialFocusState, onCrossDatasetNavigate, onMediaLibraryClick, onInaccessibleClick, accessibleProjectIds, pendingFocusType, pendingFocusDepth = 0, onViewportChange, restoreViewport, viewportNudge }: { types: DiscoveredType[]; initialPositions?: Record<string, { x: number; y: number }>; initialEdgeStyle?: EdgeStyle; onStateChange?: (state: SchemaGraphState) => void; fitViewTrigger?: number; initialFocusState?: { typeName: string; depth: 0 | 1 | 2 }; onCrossDatasetNavigate?: (datasetName: string, typeName?: string, sourceTypeName?: string, projectId?: string) => void; onMediaLibraryClick?: (fieldName: string, typeName: string) => void; onInaccessibleClick?: (projectName: string, datasetName: string) => void; accessibleProjectIds?: Set<string>; pendingFocusType?: string | null; pendingFocusDepth?: 0 | 1 | 2; onViewportChange?: (viewport: { x: number; y: number; zoom: number }) => void; restoreViewport?: { x: number; y: number; zoom: number } | null; viewportNudge?: { dy: number; trigger: number } | null }) {
   const isDark = useDarkMode()
   const { fitView, getViewport, setViewport } = useReactFlow()
   const nodesInitialized = useNodesInitialized()
@@ -932,6 +932,12 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
   const onCrossDatasetNavigateRef = useRef(onCrossDatasetNavigate)
   onCrossDatasetNavigateRef.current = onCrossDatasetNavigate
 
+  // Stable refs for media library and inaccessible project callbacks
+  const onMediaLibraryClickRef = useRef(onMediaLibraryClick)
+  onMediaLibraryClickRef.current = onMediaLibraryClick
+  const onInaccessibleClickRef = useRef(onInaccessibleClick)
+  onInaccessibleClickRef.current = onInaccessibleClick
+
   // Focus mode state
   const [focusState, setFocusState] = useState<{
     typeName: string
@@ -1018,7 +1024,7 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
   const preFocusEdgesRef = useRef<SchemaEdge[] | null>(null)
 
   const { nodes: initialNodes, edges: initialEdges } = useMemo(
-    () => buildNodesAndEdges(types, edgeStyleRef.current, { onCrossDatasetNavigate: onCrossDatasetNavigateRef.current }),
+    () => buildNodesAndEdges(types, edgeStyleRef.current, { onCrossDatasetNavigate: onCrossDatasetNavigateRef.current, onMediaLibraryClick: onMediaLibraryClickRef.current, onInaccessibleClick: onInaccessibleClickRef.current, accessibleProjectIds }),
     [types],
   )
 
@@ -1078,6 +1084,9 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
         const { nodes: subsetNodes, edges: subsetEdges } = buildNodesAndEdges(filteredTypes, edgeStyleRef.current, {
           onReferenceClick: (ref: string) => handleReferenceNavigateRef.current(ref),
           onCrossDatasetNavigate: onCrossDatasetNavigateRef.current,
+          onMediaLibraryClick: onMediaLibraryClickRef.current,
+          onInaccessibleClick: onInaccessibleClickRef.current,
+          accessibleProjectIds,
           visibleTypeNames: visibleNames,
         })
         setNodes(subsetNodes)
@@ -1089,7 +1098,7 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
     }
 
     setFocusState(null)
-    const { nodes: newNodes, edges: newEdges } = buildNodesAndEdges(types, edgeStyleRef.current, { onCrossDatasetNavigate: onCrossDatasetNavigateRef.current })
+    const { nodes: newNodes, edges: newEdges } = buildNodesAndEdges(types, edgeStyleRef.current, { onCrossDatasetNavigate: onCrossDatasetNavigateRef.current, onMediaLibraryClick: onMediaLibraryClickRef.current, onInaccessibleClick: onInaccessibleClickRef.current, accessibleProjectIds })
     setNodes(newNodes)
     setEdges(newEdges)
     setLayoutApplied(false)
@@ -1132,7 +1141,7 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
     if (!query.trim()) {
       // Restore full graph with user's layout
       searchLayoutOverrideRef.current = null
-      const { nodes: newNodes, edges: newEdges } = buildNodesAndEdges(types, edgeStyleRef.current, { onCrossDatasetNavigate: onCrossDatasetNavigateRef.current })
+      const { nodes: newNodes, edges: newEdges } = buildNodesAndEdges(types, edgeStyleRef.current, { onCrossDatasetNavigate: onCrossDatasetNavigateRef.current, onMediaLibraryClick: onMediaLibraryClickRef.current, onInaccessibleClick: onInaccessibleClickRef.current, accessibleProjectIds })
       setNodes(newNodes)
       setEdges(newEdges)
       setLayoutApplied(false)
@@ -1144,7 +1153,7 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
       (t.title && t.title.toLowerCase().includes(q)) ||
       t.fields.some(f => f.name.toLowerCase().includes(q))
     )
-    const { nodes: subsetNodes, edges: subsetEdges } = buildNodesAndEdges(filtered, edgeStyleRef.current, { onCrossDatasetNavigate: onCrossDatasetNavigateRef.current })
+    const { nodes: subsetNodes, edges: subsetEdges } = buildNodesAndEdges(filtered, edgeStyleRef.current, { onCrossDatasetNavigate: onCrossDatasetNavigateRef.current, onMediaLibraryClick: onMediaLibraryClickRef.current, onInaccessibleClick: onInaccessibleClickRef.current, accessibleProjectIds })
     setNodes(subsetNodes)
     setEdges(subsetEdges)
     // Force layered layout with default spacing for search results
@@ -1155,7 +1164,7 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
   const handleSearchClear = useCallback(() => {
     setSearchQuery('')
     searchLayoutOverrideRef.current = null
-    const { nodes: newNodes, edges: newEdges } = buildNodesAndEdges(types, edgeStyleRef.current, { onCrossDatasetNavigate: onCrossDatasetNavigateRef.current })
+    const { nodes: newNodes, edges: newEdges } = buildNodesAndEdges(types, edgeStyleRef.current, { onCrossDatasetNavigate: onCrossDatasetNavigateRef.current, onMediaLibraryClick: onMediaLibraryClickRef.current, onInaccessibleClick: onInaccessibleClickRef.current, accessibleProjectIds })
     setNodes(newNodes)
     setEdges(newEdges)
     setLayoutApplied(false)
@@ -1244,7 +1253,7 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
       setEdgeStyle(initialEdgeStyle)
       edgeStyleRef.current = initialEdgeStyle
       // Rebuild edges with the restored style so they render correctly
-      const { nodes: rebuiltNodes, edges: rebuiltEdges } = buildNodesAndEdges(types, initialEdgeStyle, { onCrossDatasetNavigate: onCrossDatasetNavigateRef.current })
+      const { nodes: rebuiltNodes, edges: rebuiltEdges } = buildNodesAndEdges(types, initialEdgeStyle, { onCrossDatasetNavigate: onCrossDatasetNavigateRef.current, onMediaLibraryClick: onMediaLibraryClickRef.current, onInaccessibleClick: onInaccessibleClickRef.current, accessibleProjectIds })
       setNodes(rebuiltNodes)
       setEdges(rebuiltEdges)
       applyLayout(rebuiltNodes, rebuiltEdges, newLayout, spacingMap[newLayout])
@@ -1253,7 +1262,7 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
     // When switching away from original+initialFocusState, rebuild full graph
     // BUT only if user hasn't manually focused a type (focusState is active user focus)
     if (newLayout !== 'original' && initialFocusState && !focusState) {
-      const { nodes: fullNodes, edges: fullEdges } = buildNodesAndEdges(types, edgeStyleRef.current, { onCrossDatasetNavigate: onCrossDatasetNavigateRef.current })
+      const { nodes: fullNodes, edges: fullEdges } = buildNodesAndEdges(types, edgeStyleRef.current, { onCrossDatasetNavigate: onCrossDatasetNavigateRef.current, onMediaLibraryClick: onMediaLibraryClickRef.current, onInaccessibleClick: onInaccessibleClickRef.current, accessibleProjectIds })
       setNodes(fullNodes)
       setEdges(fullEdges)
       applyLayout(fullNodes, fullEdges, newLayout, spacingMap[newLayout])
@@ -1282,7 +1291,7 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
     if (searchQuery.trim()) {
       setSearchQuery('')
       searchLayoutOverrideRef.current = null
-      const { nodes: fullNodes, edges: fullEdges } = buildNodesAndEdges(types, edgeStyleRef.current, { onCrossDatasetNavigate: onCrossDatasetNavigateRef.current })
+      const { nodes: fullNodes, edges: fullEdges } = buildNodesAndEdges(types, edgeStyleRef.current, { onCrossDatasetNavigate: onCrossDatasetNavigateRef.current, onMediaLibraryClick: onMediaLibraryClickRef.current, onInaccessibleClick: onInaccessibleClickRef.current, accessibleProjectIds })
       preFocusNodesRef.current = fullNodes
       preFocusEdgesRef.current = fullEdges as SchemaEdge[]
     } else if (!focusState) {
@@ -1312,6 +1321,9 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
     const { nodes: subsetNodes, edges: subsetEdges } = buildNodesAndEdges(filteredTypes, edgeStyleRef.current, {
       onReferenceClick: (ref: string) => handleReferenceNavigateRef.current(ref),
       onCrossDatasetNavigate: onCrossDatasetNavigateRef.current,
+      onMediaLibraryClick: onMediaLibraryClickRef.current,
+      onInaccessibleClick: onInaccessibleClickRef.current,
+      accessibleProjectIds,
       visibleTypeNames: visibleNames,
     })
 
@@ -1534,6 +1546,12 @@ export interface SchemaGraphProps {
   }
   /** Callback when a cross-dataset reference lozenge is clicked */
   onCrossDatasetNavigate?: (datasetName: string, typeName?: string, sourceTypeName?: string, projectId?: string) => void
+  /** Callback when a media library GDR lozenge is clicked */
+  onMediaLibraryClick?: (fieldName: string, typeName: string) => void
+  /** Callback when an inaccessible project GDR lozenge is clicked */
+  onInaccessibleClick?: (projectName: string, datasetName: string) => void
+  /** Set of project IDs the user can access — used to determine inaccessible GDR state */
+  accessibleProjectIds?: Set<string>
   /** When set, programmatically focuses on this type (used for cross-dataset navigation) */
   pendingFocusType?: string | null
   /** Depth for pendingFocusType (default: 0) */
@@ -1546,7 +1564,7 @@ export interface SchemaGraphProps {
   viewportNudge?: { dy: number; trigger: number } | null
 }
 
-export function SchemaGraph({ types, initialPositions, initialEdgeStyle, onStateChange, fitViewTrigger, initialFocusState, onCrossDatasetNavigate, pendingFocusType, pendingFocusDepth, onViewportChange, restoreViewport, viewportNudge }: SchemaGraphProps) {
+export function SchemaGraph({ types, initialPositions, initialEdgeStyle, onStateChange, fitViewTrigger, initialFocusState, onCrossDatasetNavigate, onMediaLibraryClick, onInaccessibleClick, accessibleProjectIds, pendingFocusType, pendingFocusDepth, onViewportChange, restoreViewport, viewportNudge }: SchemaGraphProps) {
   if (types.length === 0) {
     return (
       <div className="flex items-center justify-center w-full h-full text-gray-400 text-sm">
@@ -1558,7 +1576,7 @@ export function SchemaGraph({ types, initialPositions, initialEdgeStyle, onState
   return (
     <div style={{ width: '100%', height: '100%', minHeight: 500 }}>
       <ReactFlowProvider>
-        <SchemaGraphInner types={types} initialPositions={initialPositions} initialEdgeStyle={initialEdgeStyle} onStateChange={onStateChange} fitViewTrigger={fitViewTrigger} initialFocusState={initialFocusState} onCrossDatasetNavigate={onCrossDatasetNavigate} pendingFocusType={pendingFocusType} pendingFocusDepth={pendingFocusDepth} onViewportChange={onViewportChange} restoreViewport={restoreViewport} viewportNudge={viewportNudge} />
+        <SchemaGraphInner types={types} initialPositions={initialPositions} initialEdgeStyle={initialEdgeStyle} onStateChange={onStateChange} fitViewTrigger={fitViewTrigger} initialFocusState={initialFocusState} onCrossDatasetNavigate={onCrossDatasetNavigate} onMediaLibraryClick={onMediaLibraryClick} onInaccessibleClick={onInaccessibleClick} accessibleProjectIds={accessibleProjectIds} pendingFocusType={pendingFocusType} pendingFocusDepth={pendingFocusDepth} onViewportChange={onViewportChange} restoreViewport={restoreViewport} viewportNudge={viewportNudge} />
       </ReactFlowProvider>
     </div>
   )

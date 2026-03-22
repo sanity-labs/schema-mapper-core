@@ -1,7 +1,7 @@
 import { Handle, Position, type NodeProps, type Node } from '@xyflow/react';
 import { Badge } from './ui/badge';
 import { ArrowRight } from 'lucide-react';
-import { GoDatabase } from 'react-icons/go';
+import { GoDatabase, GoFilm, GoLock } from 'react-icons/go';
 import React, { memo, useMemo } from 'react';
 import { Tooltip, Box, Text } from '@sanity/ui';
 import type { DiscoveredField } from '../types';
@@ -27,6 +27,9 @@ export type SchemaNodeData = {
   incomingEdgeCount?: number;
   onReferenceClick?: (referenceTo: string) => void;
   onCrossDatasetNavigate?: (datasetName: string, typeName?: string, sourceTypeName?: string, projectId?: string) => void;
+  onMediaLibraryClick?: (fieldName: string, typeName: string) => void;
+  onInaccessibleClick?: (projectName: string, datasetName: string) => void;
+  accessibleProjectIds?: Set<string>;
   visibleTypeNames?: Set<string>;
 };
 
@@ -80,6 +83,9 @@ function FieldRow({
   refIndex,
   onReferenceClick,
   onCrossDatasetNavigate,
+  onMediaLibraryClick,
+  onInaccessibleClick,
+  accessibleProjectIds,
   visibleTypeNames,
   sourceTypeName,
 }: {
@@ -89,6 +95,9 @@ function FieldRow({
   refIndex: number; // -1 if not a reference
   onReferenceClick?: (referenceTo: string) => void;
   onCrossDatasetNavigate?: (datasetName: string, typeName?: string, sourceTypeName?: string, projectId?: string) => void;
+  onMediaLibraryClick?: (fieldName: string, typeName: string) => void;
+  onInaccessibleClick?: (projectName: string, datasetName: string) => void;
+  accessibleProjectIds?: Set<string>;
   visibleTypeNames?: Set<string>;
   sourceTypeName?: string;
 }) {
@@ -162,36 +171,62 @@ function FieldRow({
       )}
 
       {/* Cross-dataset reference lozenge — shown for fields referencing another dataset/project */}
-      {isCrossDataset && field.crossDatasetName && (
-        <>
-          <style dangerouslySetInnerHTML={{ __html: crossDatasetStyles }} />
-          <Tooltip
-            content={
-              <Box padding={2}>
-                <Text size={1}>
-                  {field.crossDatasetTooltip ? (
-                    <span dangerouslySetInnerHTML={{ __html: field.crossDatasetTooltip }} />
-                  ) : field.crossDatasetName}
-                </Text>
-              </Box>
-            }
-            placement="top"
-            portal
-          >
-            <button
-              className={"group/xds absolute right-0 top-1/2 -translate-y-1/2 translate-x-[calc(100%+8px)] z-10 flex items-center gap-1 px-2.5 py-1 rounded-full border border-dashed text-[10px] font-medium transition-colors whitespace-nowrap cursor-pointer " + (field.isGlobalReference ? "border-purple-400 dark:border-purple-500 bg-purple-100 dark:bg-purple-900/50 text-purple-700 dark:text-purple-300 hover:bg-purple-200 dark:hover:bg-purple-800/50" : "border-teal-400 dark:border-teal-500 bg-teal-100 dark:bg-teal-900/50 text-teal-700 dark:text-teal-300 hover:bg-teal-200 dark:hover:bg-teal-800/50")}
-              onClick={(e) => {
-                e.stopPropagation();
-                onCrossDatasetNavigate?.(field.crossDatasetName!, field.referenceTo, sourceTypeName, field.crossDatasetProjectId);
-              }}
+      {isCrossDataset && field.crossDatasetName && (() => {
+        const isMediaLibrary = field.crossDatasetResourceType === 'media-library';
+        const isInaccessible = !isMediaLibrary && field.isGlobalReference && field.crossDatasetProjectId && accessibleProjectIds && !accessibleProjectIds.has(field.crossDatasetProjectId);
+
+        return (
+          <>
+            <style dangerouslySetInnerHTML={{ __html: crossDatasetStyles }} />
+            <Tooltip
+              content={
+                <Box padding={2}>
+                  <Text size={1}>
+                    {isMediaLibrary ? (
+                      <span>Media Library reference</span>
+                    ) : field.crossDatasetTooltip ? (
+                      <span dangerouslySetInnerHTML={{ __html: field.crossDatasetTooltip }} />
+                    ) : field.crossDatasetName}
+                  </Text>
+                </Box>
+              }
+              placement="top"
+              portal
             >
-              <GoDatabase className="w-2.5 h-2.5" />
-              <ArrowRight className="w-2 h-2 group-hover/xds:animate-[bounceRight_1s_ease-in-out_infinite]" />
-              <span>{field.crossDatasetName}</span>
-            </button>
-          </Tooltip>
-        </>
-      )}
+              {isMediaLibrary ? (
+                <button
+                  className="group/xds absolute right-0 top-1/2 -translate-y-1/2 translate-x-[calc(100%+8px)] z-10 flex items-center gap-1 px-2.5 py-1 rounded-full border border-dashed text-[10px] font-medium border-gray-400 dark:border-gray-500 bg-gray-100 dark:bg-gray-800/50 text-gray-600 dark:text-gray-400"
+                  onClick={(e) => { e.stopPropagation(); onMediaLibraryClick?.(field.name, sourceTypeName || ''); }}
+                >
+                  <GoFilm className="w-2.5 h-2.5" />
+                  <span>Media Library</span>
+                </button>
+              ) : isInaccessible ? (
+                <button
+                  className="group/xds absolute right-0 top-1/2 -translate-y-1/2 translate-x-[calc(100%+8px)] z-10 flex items-center gap-1 px-2.5 py-1 rounded-full border border-dashed text-[10px] font-medium border-purple-400 dark:border-purple-500 bg-purple-100 dark:bg-purple-900/50 text-purple-700 dark:text-purple-300"
+                  onClick={(e) => { e.stopPropagation(); onInaccessibleClick?.(field.crossDatasetName || '', field.crossDatasetProjectId || ''); }}
+                >
+                  <GoDatabase className="w-2.5 h-2.5" />
+                  <GoLock className="w-2.5 h-2.5" />
+                  <span>{field.crossDatasetName}</span>
+                </button>
+              ) : (
+                <button
+                  className={"group/xds absolute right-0 top-1/2 -translate-y-1/2 translate-x-[calc(100%+8px)] z-10 flex items-center gap-1 px-2.5 py-1 rounded-full border border-dashed text-[10px] font-medium transition-colors whitespace-nowrap cursor-pointer " + (field.isGlobalReference ? "border-purple-400 dark:border-purple-500 bg-purple-100 dark:bg-purple-900/50 text-purple-700 dark:text-purple-300 hover:bg-purple-200 dark:hover:bg-purple-800/50" : "border-teal-400 dark:border-teal-500 bg-teal-100 dark:bg-teal-900/50 text-teal-700 dark:text-teal-300 hover:bg-teal-200 dark:hover:bg-teal-800/50")}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onCrossDatasetNavigate?.(field.crossDatasetName!, field.referenceTo, sourceTypeName, field.crossDatasetProjectId);
+                  }}
+                >
+                  <GoDatabase className="w-2.5 h-2.5" />
+                  <ArrowRight className="w-2 h-2 group-hover/xds:animate-[bounceRight_1s_ease-in-out_infinite]" />
+                  <span>{field.crossDatasetName}</span>
+                </button>
+              )}
+            </Tooltip>
+          </>
+        );
+      })()}
     </div>
   );
 }
@@ -201,7 +236,7 @@ function FieldRow({
 // ---------------------------------------------------------------------------
 
 function SchemaNode({ data }: NodeProps<SchemaNodeType>) {
-  const { typeName, documentCount, fields, onReferenceClick, onCrossDatasetNavigate, visibleTypeNames } = data;
+  const { typeName, documentCount, fields, onReferenceClick, onCrossDatasetNavigate, onMediaLibraryClick, onInaccessibleClick, accessibleProjectIds, visibleTypeNames } = data;
 
   // Pre-compute reference indices for handle positioning
   const refFields = useMemo(
@@ -295,6 +330,9 @@ function SchemaNode({ data }: NodeProps<SchemaNodeType>) {
             refIndex={refFields[field.name] ?? -1}
             onReferenceClick={onReferenceClick}
             onCrossDatasetNavigate={onCrossDatasetNavigate}
+            onMediaLibraryClick={onMediaLibraryClick}
+            onInaccessibleClick={onInaccessibleClick}
+            accessibleProjectIds={accessibleProjectIds}
             visibleTypeNames={visibleTypeNames}
             sourceTypeName={typeName}
           />

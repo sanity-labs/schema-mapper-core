@@ -11,6 +11,7 @@ export type DiscoveredField = {
   crossDatasetName?: string
   crossDatasetProjectId?: string  // Raw project ID for global refs (before display name resolution)
   crossDatasetTooltip?: string
+  crossDatasetResourceType?: 'dataset' | 'media-library' | string  // From deployed schema resourceType field
 }
 
 export type DiscoveredType = {
