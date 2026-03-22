@@ -1,7 +1,7 @@
 import { Handle, Position, type NodeProps, type Node } from '@xyflow/react';
 import { Badge } from './ui/badge';
 import { ArrowRight } from 'lucide-react';
-import { GoDatabase, GoFilm, GoLock } from 'react-icons/go';
+import { GoDatabase, GoImage, GoLock } from 'react-icons/go';
 import React, { memo, useMemo } from 'react';
 import { Tooltip, Box, Text } from '@sanity/ui';
 import type { DiscoveredField } from '../types';
@@ -198,7 +198,7 @@ function FieldRow({
                   className="group/xds absolute right-0 top-1/2 -translate-y-1/2 translate-x-[calc(100%+8px)] z-10 flex items-center gap-1 px-2.5 py-1 rounded-full border border-dashed text-[10px] font-medium border-gray-400 dark:border-gray-500 bg-gray-100 dark:bg-gray-800/50 text-gray-600 dark:text-gray-400"
                   onClick={(e) => { e.stopPropagation(); onMediaLibraryClick?.(field.name, sourceTypeName || ''); }}
                 >
-                  <GoFilm className="w-2.5 h-2.5" />
+                  <GoImage className="w-2.5 h-2.5" />
                   <span>Media Library</span>
                 </button>
               ) : isInaccessible ? (
