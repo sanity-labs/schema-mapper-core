@@ -1,8 +1,18 @@
 import { Handle, Position, type NodeProps, type Node } from '@xyflow/react';
 import { Badge } from './ui/badge';
 import { ArrowRight } from 'lucide-react';
+import { GoDatabase, GoImage, GoLock } from 'react-icons/go';
 import React, { memo, useMemo } from 'react';
+import { Tooltip, Box, Text } from '@sanity/ui';
 import type { DiscoveredField } from '../types';
+
+// Bounce animation for cross-dataset lozenge arrow on hover
+const crossDatasetStyles = `
+@keyframes bounceRight {
+  0%, 100% { transform: translateX(0); }
+  50% { transform: translateX(2px); }
+}
+`;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -16,6 +26,10 @@ export type SchemaNodeData = {
   hasOutgoing?: boolean;
   incomingEdgeCount?: number;
   onReferenceClick?: (referenceTo: string) => void;
+  onCrossDatasetNavigate?: (datasetName: string, typeName?: string, sourceTypeName?: string, projectId?: string) => void;
+  onMediaLibraryClick?: (fieldName: string, typeName: string) => void;
+  onInaccessibleClick?: (projectName: string, datasetName: string) => void;
+  accessibleProjectIds?: Set<string>;
   visibleTypeNames?: Set<string>;
 };
 
@@ -68,16 +82,27 @@ function FieldRow({
   totalRefs,
   refIndex,
   onReferenceClick,
+  onCrossDatasetNavigate,
+  onMediaLibraryClick,
+  onInaccessibleClick,
+  accessibleProjectIds,
   visibleTypeNames,
+  sourceTypeName,
 }: {
   field: DiscoveredField;
   index: number;
   totalRefs: number;
   refIndex: number; // -1 if not a reference
   onReferenceClick?: (referenceTo: string) => void;
+  onCrossDatasetNavigate?: (datasetName: string, typeName?: string, sourceTypeName?: string, projectId?: string) => void;
+  onMediaLibraryClick?: (fieldName: string, typeName: string) => void;
+  onInaccessibleClick?: (projectName: string, datasetName: string) => void;
+  accessibleProjectIds?: Set<string>;
   visibleTypeNames?: Set<string>;
+  sourceTypeName?: string;
 }) {
-  const isRef = field.isReference || field.type === 'reference';
+  const isCrossDataset = field.isCrossDatasetReference === true;
+  const isRef = !isCrossDataset && (field.isReference || field.type === 'reference');
   const isInline = field.isInlineObject === true;
   const style = fieldBadgeStyle(isInline ? 'object' : field.type);
   const even = index % 2 === 0;
@@ -144,6 +169,64 @@ function FieldRow({
           {field.referenceTo}
         </button>
       )}
+
+      {/* Cross-dataset reference lozenge — shown for fields referencing another dataset/project */}
+      {isCrossDataset && field.crossDatasetName && (() => {
+        const isMediaLibrary = field.crossDatasetResourceType === 'media-library';
+        const isInaccessible = !isMediaLibrary && field.isGlobalReference && field.crossDatasetProjectId && accessibleProjectIds && !accessibleProjectIds.has(field.crossDatasetProjectId);
+
+        return (
+          <>
+            <style dangerouslySetInnerHTML={{ __html: crossDatasetStyles }} />
+            <Tooltip
+              content={
+                <Box padding={2}>
+                  <Text size={1}>
+                    {isMediaLibrary ? (
+                      <span>Media Library reference</span>
+                    ) : field.crossDatasetTooltip ? (
+                      <span dangerouslySetInnerHTML={{ __html: field.crossDatasetTooltip }} />
+                    ) : field.crossDatasetName}
+                  </Text>
+                </Box>
+              }
+              placement="top"
+              portal
+            >
+              {isMediaLibrary ? (
+                <button
+                  className="group/xds absolute right-0 top-1/2 -translate-y-1/2 translate-x-[calc(100%+8px)] z-10 flex items-center gap-1 px-2.5 py-1 rounded-full border border-dashed text-[10px] font-medium border-gray-400 dark:border-gray-500 bg-gray-100 dark:bg-gray-800/50 text-gray-600 dark:text-gray-400"
+                  onClick={(e) => { e.stopPropagation(); onMediaLibraryClick?.(field.name, sourceTypeName || ''); }}
+                >
+                  <GoImage className="w-2.5 h-2.5" />
+                  <span>Media Library</span>
+                </button>
+              ) : isInaccessible ? (
+                <button
+                  className="group/xds absolute right-0 top-1/2 -translate-y-1/2 translate-x-[calc(100%+8px)] z-10 flex items-center gap-1 px-2.5 py-1 rounded-full border border-dashed text-[10px] font-medium border-purple-400 dark:border-purple-500 bg-purple-100 dark:bg-purple-900/50 text-purple-700 dark:text-purple-300"
+                  onClick={(e) => { e.stopPropagation(); onInaccessibleClick?.(field.crossDatasetName || '', field.crossDatasetProjectId || ''); }}
+                >
+                  <GoDatabase className="w-2.5 h-2.5" />
+                  <GoLock className="w-2.5 h-2.5" />
+                  <span>{field.crossDatasetName}</span>
+                </button>
+              ) : (
+                <button
+                  className={"group/xds absolute right-0 top-1/2 -translate-y-1/2 translate-x-[calc(100%+8px)] z-10 flex items-center gap-1 px-2.5 py-1 rounded-full border border-dashed text-[10px] font-medium transition-colors whitespace-nowrap cursor-pointer " + (field.isGlobalReference ? "border-purple-400 dark:border-purple-500 bg-purple-100 dark:bg-purple-900/50 text-purple-700 dark:text-purple-300 hover:bg-purple-200 dark:hover:bg-purple-800/50" : "border-teal-400 dark:border-teal-500 bg-teal-100 dark:bg-teal-900/50 text-teal-700 dark:text-teal-300 hover:bg-teal-200 dark:hover:bg-teal-800/50")}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onCrossDatasetNavigate?.(field.crossDatasetName!, field.referenceTo, sourceTypeName, field.crossDatasetProjectId);
+                  }}
+                >
+                  <GoDatabase className="w-2.5 h-2.5" />
+                  <ArrowRight className="w-2 h-2 group-hover/xds:animate-[bounceRight_1s_ease-in-out_infinite]" />
+                  <span>{field.crossDatasetName}</span>
+                </button>
+              )}
+            </Tooltip>
+          </>
+        );
+      })()}
     </div>
   );
 }
@@ -153,12 +236,13 @@ function FieldRow({
 // ---------------------------------------------------------------------------
 
 function SchemaNode({ data }: NodeProps<SchemaNodeType>) {
-  const { typeName, documentCount, fields, onReferenceClick, visibleTypeNames } = data;
+  const { typeName, documentCount, fields, onReferenceClick, onCrossDatasetNavigate, onMediaLibraryClick, onInaccessibleClick, accessibleProjectIds, visibleTypeNames } = data;
 
   // Pre-compute reference indices for handle positioning
   const refFields = useMemo(
     () =>
       fields.reduce<Record<string, number>>((acc, f, _i) => {
+        if (f.isCrossDatasetReference) return acc;
         if (f.isReference || f.isInlineObject || f.type === 'reference') {
           acc[f.name] = Object.keys(acc).length;
         }
@@ -173,14 +257,20 @@ function SchemaNode({ data }: NodeProps<SchemaNodeType>) {
   const hasOrphanedRefs = useMemo(() => {
     if (!visibleTypeNames || !onReferenceClick) return false;
     return fields.some(f =>
+      !f.isCrossDatasetReference &&
       (f.isReference || f.type === 'reference') &&
       f.referenceTo &&
       !visibleTypeNames.has(f.referenceTo)
     );
   }, [fields, visibleTypeNames, onReferenceClick]);
 
+  // Check if any cross-dataset reference fields exist (need overflow for lozenges)
+  const hasCrossDatasetRefs = useMemo(() => {
+    return fields.some(f => f.isCrossDatasetReference && f.crossDatasetName);
+  }, [fields]);
+
   return (
-    <div className={"rounded-md border bg-card text-card-foreground min-w-[200px] max-w-[280px]" + (hasOrphanedRefs ? " mr-[130px]" : "")} style={{ overflow: hasOrphanedRefs ? 'visible' : 'hidden' }}>
+    <div className={"rounded-md border bg-card text-card-foreground min-w-[200px] max-w-[280px]" + (hasOrphanedRefs || hasCrossDatasetRefs ? " mr-[130px]" : "")} style={{ overflow: hasOrphanedRefs || hasCrossDatasetRefs ? 'visible' : 'hidden' }}>
       {/* ---- Invisible handles on all 4 sides for floating edge connections ---- */}
       <Handle
         type="target"
@@ -239,7 +329,12 @@ function SchemaNode({ data }: NodeProps<SchemaNodeType>) {
             totalRefs={totalRefs}
             refIndex={refFields[field.name] ?? -1}
             onReferenceClick={onReferenceClick}
+            onCrossDatasetNavigate={onCrossDatasetNavigate}
+            onMediaLibraryClick={onMediaLibraryClick}
+            onInaccessibleClick={onInaccessibleClick}
+            accessibleProjectIds={accessibleProjectIds}
             visibleTypeNames={visibleTypeNames}
+            sourceTypeName={typeName}
           />
         ))}
       </div>

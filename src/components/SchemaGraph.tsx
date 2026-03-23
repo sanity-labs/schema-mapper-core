@@ -281,7 +281,7 @@ async function getElkLayout(spacing: number,
 
     // Source ports for reference and inline object fields (right side)
     node.data.fields.forEach((field: DiscoveredField) => {
-      if (field.isReference || field.isInlineObject || field.type === 'reference') {
+      if (!field.isCrossDatasetReference && (field.isReference || field.isInlineObject || field.type === 'reference')) {
         ports.push({
           id: `${node.id}-ref-${field.name}`,
           layoutOptions: {
@@ -432,10 +432,13 @@ async function getElkLayout(spacing: number,
 function getNeighbourhood(
   types: DiscoveredType[],
   focusTypeName: string,
-  depth: 1 | 2,
+  depth: 0 | 1 | 2,
 ): Set<string> {
   const typeMap = new Map(types.map(t => [t.name, t]))
   const included = new Set<string>([focusTypeName])
+
+  // 0-hop: just the focused type itself
+  if (depth === 0) return included
 
   // 1-hop: direct connections (references to and from)
   const focusType = typeMap.get(focusTypeName)
@@ -530,9 +533,9 @@ function NodeContextMenu({ x, y, typeName, onFocus, onExpand, onClose }: {
   )
 }
 
-function FocusBar({ typeName, depth, connectedCount, canExpand, canGoBack, backTypeName, onClose, onToggleDepth, onBack }: {
-  typeName: string; depth: 1 | 2; connectedCount: number; canExpand: boolean; canGoBack: boolean; backTypeName?: string
-  onClose: () => void; onToggleDepth: () => void; onBack: () => void
+function FocusBar({ typeName, depth, connectedCount, canExpand, canFocus, canGoBack, backTypeName, onClose, onExpandDepth, onFocusDepth, onBack }: {
+  typeName: string; depth: 0 | 1 | 2; connectedCount: number; canExpand: boolean; canFocus: boolean; canGoBack: boolean; backTypeName?: string
+  onClose: () => void; onExpandDepth: () => void; onFocusDepth: () => void; onBack: () => void
 }) {
   return (
     <div className="absolute top-3 left-3 z-20 bg-white/90 dark:bg-gray-900/90 backdrop-blur-sm border border-gray-200 dark:border-gray-700 rounded-lg px-4 py-2 flex items-center gap-3">
@@ -547,17 +550,28 @@ function FocusBar({ typeName, depth, connectedCount, canExpand, canGoBack, backT
       )}
       <span className="text-sm text-gray-600 dark:text-gray-300">
         Focused on <span className="font-medium text-gray-900 dark:text-gray-100">{typeName}</span>
-        <span className="text-gray-400 dark:text-gray-500 ml-1">({depth === 1 ? '1-hop' : '2-hop'}) — {connectedCount} connected type{connectedCount !== 1 ? 's' : ''}</span>
+        {depth > 0 && <span className="text-gray-400 dark:text-gray-500 ml-1">({depth}-hop){connectedCount > 0 ? ` — ${connectedCount} connected type${connectedCount !== 1 ? 's' : ''}` : ''}</span>}
       </span>
-      {(depth === 2 || canExpand) && (
+      {canFocus && depth > 0 && (
         <Button
           mode="ghost"
           tone="primary"
           fontSize={1}
           padding={2}
-          onClick={onToggleDepth}
-          text={depth === 1 ? 'Expand' : 'Focus'}
-          icon={depth === 1 ? TbArrowsMaximize : TbFocus2}
+          onClick={onFocusDepth}
+          text="Focus"
+          icon={TbFocus2}
+        />
+      )}
+      {canExpand && (
+        <Button
+          mode="ghost"
+          tone="primary"
+          fontSize={1}
+          padding={2}
+          onClick={onExpandDepth}
+          text="Expand"
+          icon={TbArrowsMaximize}
         />
       )}
       <button
@@ -640,11 +654,14 @@ function buildNodesAndEdges(
       // Compute per-node: does this node have orphaned refs that add right margin?
       orphanedRefPadding: extraNodeData?.visibleTypeNames
         ? type.fields.some(f =>
-            (f.isReference || f.type === 'reference') &&
-            f.referenceTo &&
-            !extraNodeData.visibleTypeNames!.has(f.referenceTo)
+            // Orphaned refs (reference to type not in current view)
+            ((f.isReference || f.type === 'reference') &&
+              f.referenceTo &&
+              !extraNodeData.visibleTypeNames!.has(f.referenceTo)) ||
+            // Cross-dataset refs always hang off the side
+            f.isCrossDatasetReference
           ) ? 130 : 0
-        : 0,
+        : (type.fields.some(f => f.isCrossDatasetReference) ? 130 : 0),
     },
   }))
 
@@ -668,7 +685,7 @@ function buildNodesAndEdges(
 
   types.forEach((type) => {
     type.fields.forEach((field) => {
-      const hasEdge = (field.isReference || field.isInlineObject) && field.referenceTo && typeNames.has(field.referenceTo)
+      const hasEdge = !field.isCrossDatasetReference && (field.isReference || field.isInlineObject) && field.referenceTo && typeNames.has(field.referenceTo)
       if (hasEdge) {
         if (!sourceColorMap.has(type.name)) {
           sourceColorMap.set(type.name, edgeColors[colorIdx % edgeColors.length])
@@ -827,9 +844,9 @@ function GraphControls({
 // Inner component (needs ReactFlowProvider ancestor for hooks)
 // ---------------------------------------------------------------------------
 
-function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateChange, fitViewTrigger, initialFocusState }: { types: DiscoveredType[]; initialPositions?: Record<string, { x: number; y: number }>; initialEdgeStyle?: EdgeStyle; onStateChange?: (state: SchemaGraphState) => void; fitViewTrigger?: number; initialFocusState?: { typeName: string; depth: 1 | 2 } }) {
+function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateChange, fitViewTrigger, initialFocusState, onCrossDatasetNavigate, onMediaLibraryClick, onInaccessibleClick, accessibleProjectIds, pendingFocusType, pendingFocusDepth = 0, onViewportChange, restoreViewport, viewportNudge }: { types: DiscoveredType[]; initialPositions?: Record<string, { x: number; y: number }>; initialEdgeStyle?: EdgeStyle; onStateChange?: (state: SchemaGraphState) => void; fitViewTrigger?: number; initialFocusState?: { typeName: string; depth: 0 | 1 | 2 }; onCrossDatasetNavigate?: (datasetName: string, typeName?: string, sourceTypeName?: string, projectId?: string) => void; onMediaLibraryClick?: (fieldName: string, typeName: string) => void; onInaccessibleClick?: (projectName: string, datasetName: string) => void; accessibleProjectIds?: Set<string>; pendingFocusType?: string | null; pendingFocusDepth?: 0 | 1 | 2; onViewportChange?: (viewport: { x: number; y: number; zoom: number }) => void; restoreViewport?: { x: number; y: number; zoom: number } | null; viewportNudge?: { dy: number; trigger: number } | null }) {
   const isDark = useDarkMode()
-  const { fitView } = useReactFlow()
+  const { fitView, getViewport, setViewport } = useReactFlow()
   const nodesInitialized = useNodesInitialized()
   const containerRef = useRef<HTMLDivElement>(null)
 
@@ -911,10 +928,20 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
   const edgeStyleRef = useRef(edgeStyle)
   edgeStyleRef.current = edgeStyle
 
+  // Stable ref for onCrossDatasetNavigate to avoid rebuild cascades
+  const onCrossDatasetNavigateRef = useRef(onCrossDatasetNavigate)
+  onCrossDatasetNavigateRef.current = onCrossDatasetNavigate
+
+  // Stable refs for media library and inaccessible project callbacks
+  const onMediaLibraryClickRef = useRef(onMediaLibraryClick)
+  onMediaLibraryClickRef.current = onMediaLibraryClick
+  const onInaccessibleClickRef = useRef(onInaccessibleClick)
+  onInaccessibleClickRef.current = onInaccessibleClick
+
   // Focus mode state
   const [focusState, setFocusState] = useState<{
     typeName: string
-    depth: 1 | 2
+    depth: 0 | 1 | 2
   } | null>(null)
   // Search/filter state
   const [searchQuery, setSearchQuery] = useState('')
@@ -929,6 +956,65 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
 
   const focusHistoryRef = useRef<string[]>([]) // stack of previous focusedType names
 
+  // Handle programmatic focus from cross-dataset navigation
+  const pendingFocusHandledRef = useRef<string | null>(null)
+  const handleFocusRef = useRef<((typeName: string, depth: 0 | 1 | 2) => void) | null>(null)
+  const handleExitFocusRef = useRef<(() => void) | null>(null)
+  useEffect(() => {
+    if (!pendingFocusType || pendingFocusType === pendingFocusHandledRef.current) return
+    // Special sentinel: clear focus and restore full graph
+    if (pendingFocusType === '__clear__') {
+      pendingFocusHandledRef.current = pendingFocusType
+      handleExitFocusRef.current?.()
+      return
+    }
+    // Check if the target type exists in current types
+    const targetExists = types.some(t => t.name === pendingFocusType)
+    if (targetExists && handleFocusRef.current) {
+      pendingFocusHandledRef.current = pendingFocusType
+      // Apply focus with a small delay to let layout settle
+      setTimeout(() => {
+        handleFocusRef.current?.(pendingFocusType, pendingFocusDepth)
+      }, 300)
+    }
+  }, [pendingFocusType, pendingFocusDepth, types])
+
+  // Restore viewport from back navigation
+  // skipFitViewRef declared here (before synchronous check) to avoid TDZ error
+  const skipFitViewRef = useRef(false)
+  // Set skipFitView SYNCHRONOUSLY during render so it's true before any layout effect fires
+  const restoreViewportHandledRef = useRef<string | null>(null)
+  if (restoreViewport) {
+    const key = `${restoreViewport.x},${restoreViewport.y},${restoreViewport.zoom}`
+    if (key !== restoreViewportHandledRef.current) {
+      skipFitViewRef.current = true
+    }
+  }
+  useEffect(() => {
+    if (!restoreViewport) {
+      skipFitViewRef.current = false
+      return
+    }
+    const key = `${restoreViewport.x},${restoreViewport.y},${restoreViewport.zoom}`
+    if (key === restoreViewportHandledRef.current) return
+    restoreViewportHandledRef.current = key
+    // Wait for layout to settle, then restore viewport
+    setTimeout(() => {
+      setViewport(restoreViewport, { duration: 300 })
+      // Clear the flag after viewport is restored
+      setTimeout(() => { skipFitViewRef.current = false }, 400)
+    }, 500)
+  }, [restoreViewport, setViewport])
+
+
+  // Instant viewport nudge (for nav collapse/expand center compensation)
+  const nudgeTriggerRef = useRef(0)
+  useEffect(() => {
+    if (!viewportNudge || viewportNudge.trigger === nudgeTriggerRef.current) return
+    nudgeTriggerRef.current = viewportNudge.trigger
+    const vp = getViewport()
+    setViewport({ x: vp.x, y: vp.y + viewportNudge.dy, zoom: vp.zoom }, { duration: 0 })
+  }, [viewportNudge, getViewport, setViewport])
   const [contextMenu, setContextMenu] = useState<{
     x: number
     y: number
@@ -938,7 +1024,7 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
   const preFocusEdgesRef = useRef<SchemaEdge[] | null>(null)
 
   const { nodes: initialNodes, edges: initialEdges } = useMemo(
-    () => buildNodesAndEdges(types, edgeStyleRef.current),
+    () => buildNodesAndEdges(types, edgeStyleRef.current, { onCrossDatasetNavigate: onCrossDatasetNavigateRef.current, onMediaLibraryClick: onMediaLibraryClickRef.current, onInaccessibleClick: onInaccessibleClickRef.current, accessibleProjectIds }),
     [types],
   )
 
@@ -997,6 +1083,10 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
         const visibleNames = new Set(filteredTypes.map(t => t.name))
         const { nodes: subsetNodes, edges: subsetEdges } = buildNodesAndEdges(filteredTypes, edgeStyleRef.current, {
           onReferenceClick: (ref: string) => handleReferenceNavigateRef.current(ref),
+          onCrossDatasetNavigate: onCrossDatasetNavigateRef.current,
+          onMediaLibraryClick: onMediaLibraryClickRef.current,
+          onInaccessibleClick: onInaccessibleClickRef.current,
+          accessibleProjectIds,
           visibleTypeNames: visibleNames,
         })
         setNodes(subsetNodes)
@@ -1008,7 +1098,7 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
     }
 
     setFocusState(null)
-    const { nodes: newNodes, edges: newEdges } = buildNodesAndEdges(types, edgeStyleRef.current)
+    const { nodes: newNodes, edges: newEdges } = buildNodesAndEdges(types, edgeStyleRef.current, { onCrossDatasetNavigate: onCrossDatasetNavigateRef.current, onMediaLibraryClick: onMediaLibraryClickRef.current, onInaccessibleClick: onInaccessibleClickRef.current, accessibleProjectIds })
     setNodes(newNodes)
     setEdges(newEdges)
     setLayoutApplied(false)
@@ -1017,6 +1107,16 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
   // Search filter — rebuild graph with matching types
   const isSearching = searchQuery.trim().length > 0
 
+  // Track viewport continuously for navigation save/restore
+  const viewportRef = useRef<{ x: number; y: number; zoom: number }>({ x: 0, y: 0, zoom: 1 })
+  const onViewportChangeRef = useRef<((v: { x: number; y: number; zoom: number }) => void) | null>(null)
+  onViewportChangeRef.current = onViewportChange ?? null
+  const handleMoveEnd = useCallback((_: any, viewport: { x: number; y: number; zoom: number }) => {
+    viewportRef.current = viewport
+    // Update parent's viewport ref without triggering full state change
+    onViewportChangeRef.current?.(viewport)
+  }, [])
+
   // Notify parent of state changes
   useEffect(() => {
     onStateChange?.({
@@ -1024,6 +1124,7 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
       focusDepth: focusState?.depth,
       isSearching,
       visibleTypeCount: nodes.length,
+      viewport: viewportRef.current,
     })
   }, [focusState, isSearching, nodes.length, onStateChange])
 
@@ -1040,7 +1141,7 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
     if (!query.trim()) {
       // Restore full graph with user's layout
       searchLayoutOverrideRef.current = null
-      const { nodes: newNodes, edges: newEdges } = buildNodesAndEdges(types, edgeStyleRef.current)
+      const { nodes: newNodes, edges: newEdges } = buildNodesAndEdges(types, edgeStyleRef.current, { onCrossDatasetNavigate: onCrossDatasetNavigateRef.current, onMediaLibraryClick: onMediaLibraryClickRef.current, onInaccessibleClick: onInaccessibleClickRef.current, accessibleProjectIds })
       setNodes(newNodes)
       setEdges(newEdges)
       setLayoutApplied(false)
@@ -1052,7 +1153,7 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
       (t.title && t.title.toLowerCase().includes(q)) ||
       t.fields.some(f => f.name.toLowerCase().includes(q))
     )
-    const { nodes: subsetNodes, edges: subsetEdges } = buildNodesAndEdges(filtered, edgeStyleRef.current)
+    const { nodes: subsetNodes, edges: subsetEdges } = buildNodesAndEdges(filtered, edgeStyleRef.current, { onCrossDatasetNavigate: onCrossDatasetNavigateRef.current, onMediaLibraryClick: onMediaLibraryClickRef.current, onInaccessibleClick: onInaccessibleClickRef.current, accessibleProjectIds })
     setNodes(subsetNodes)
     setEdges(subsetEdges)
     // Force layered layout with default spacing for search results
@@ -1063,7 +1164,7 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
   const handleSearchClear = useCallback(() => {
     setSearchQuery('')
     searchLayoutOverrideRef.current = null
-    const { nodes: newNodes, edges: newEdges } = buildNodesAndEdges(types, edgeStyleRef.current)
+    const { nodes: newNodes, edges: newEdges } = buildNodesAndEdges(types, edgeStyleRef.current, { onCrossDatasetNavigate: onCrossDatasetNavigateRef.current, onMediaLibraryClick: onMediaLibraryClickRef.current, onInaccessibleClick: onInaccessibleClickRef.current, accessibleProjectIds })
     setNodes(newNodes)
     setEdges(newEdges)
     setLayoutApplied(false)
@@ -1105,9 +1206,11 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
       setNodes(layoutedNodes as any)
       setLayoutApplied(true)
 
-      window.requestAnimationFrame(() => {
-        fitView({ padding: 0.12, duration: skipAnimation ? 0 : 300 })
-      })
+      if (!skipFitViewRef.current) {
+        window.requestAnimationFrame(() => {
+          fitView({ padding: 0.12, duration: skipAnimation ? 0 : 300 })
+        })
+      }
     } catch (err) {
       console.error('ELK layout failed:', err)
     } finally {
@@ -1150,7 +1253,7 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
       setEdgeStyle(initialEdgeStyle)
       edgeStyleRef.current = initialEdgeStyle
       // Rebuild edges with the restored style so they render correctly
-      const { nodes: rebuiltNodes, edges: rebuiltEdges } = buildNodesAndEdges(types, initialEdgeStyle)
+      const { nodes: rebuiltNodes, edges: rebuiltEdges } = buildNodesAndEdges(types, initialEdgeStyle, { onCrossDatasetNavigate: onCrossDatasetNavigateRef.current, onMediaLibraryClick: onMediaLibraryClickRef.current, onInaccessibleClick: onInaccessibleClickRef.current, accessibleProjectIds })
       setNodes(rebuiltNodes)
       setEdges(rebuiltEdges)
       applyLayout(rebuiltNodes, rebuiltEdges, newLayout, spacingMap[newLayout])
@@ -1159,7 +1262,7 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
     // When switching away from original+initialFocusState, rebuild full graph
     // BUT only if user hasn't manually focused a type (focusState is active user focus)
     if (newLayout !== 'original' && initialFocusState && !focusState) {
-      const { nodes: fullNodes, edges: fullEdges } = buildNodesAndEdges(types, edgeStyleRef.current)
+      const { nodes: fullNodes, edges: fullEdges } = buildNodesAndEdges(types, edgeStyleRef.current, { onCrossDatasetNavigate: onCrossDatasetNavigateRef.current, onMediaLibraryClick: onMediaLibraryClickRef.current, onInaccessibleClick: onInaccessibleClickRef.current, accessibleProjectIds })
       setNodes(fullNodes)
       setEdges(fullEdges)
       applyLayout(fullNodes, fullEdges, newLayout, spacingMap[newLayout])
@@ -1183,12 +1286,12 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
   }, [layoutType, handleSpacingChange])
 
   // Focus mode handlers
-  const handleFocus = useCallback((typeName: string, depth: 1 | 2) => {
+  const handleFocus = useCallback((typeName: string, depth: 0 | 1 | 2) => {
     // If searching, clear search and rebuild full graph first so pre-focus state is the full graph
     if (searchQuery.trim()) {
       setSearchQuery('')
       searchLayoutOverrideRef.current = null
-      const { nodes: fullNodes, edges: fullEdges } = buildNodesAndEdges(types, edgeStyleRef.current)
+      const { nodes: fullNodes, edges: fullEdges } = buildNodesAndEdges(types, edgeStyleRef.current, { onCrossDatasetNavigate: onCrossDatasetNavigateRef.current, onMediaLibraryClick: onMediaLibraryClickRef.current, onInaccessibleClick: onInaccessibleClickRef.current, accessibleProjectIds })
       preFocusNodesRef.current = fullNodes
       preFocusEdgesRef.current = fullEdges as SchemaEdge[]
     } else if (!focusState) {
@@ -1217,6 +1320,10 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
     const visibleNames = new Set(filteredTypes.map(t => t.name))
     const { nodes: subsetNodes, edges: subsetEdges } = buildNodesAndEdges(filteredTypes, edgeStyleRef.current, {
       onReferenceClick: (ref: string) => handleReferenceNavigateRef.current(ref),
+      onCrossDatasetNavigate: onCrossDatasetNavigateRef.current,
+      onMediaLibraryClick: onMediaLibraryClickRef.current,
+      onInaccessibleClick: onInaccessibleClickRef.current,
+      accessibleProjectIds,
       visibleTypeNames: visibleNames,
     })
 
@@ -1226,6 +1333,7 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
     // Re-layout the subset
     setLayoutApplied(false)
   }, [types, nodes, edges, focusState, searchQuery, layoutType, spacing, setNodes, setEdges])
+  handleFocusRef.current = handleFocus
 
   // Ref-stable callback for reference navigation (avoids circular deps)
   const handleReferenceNavigateRef = useRef<(referenceTo: string) => void>(() => {})
@@ -1238,8 +1346,8 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
     if (!types.some(t => t.name === referenceTo)) return
     // Push current focus to history
     focusHistoryRef.current = [...focusHistoryRef.current, focusState.typeName]
-    // Focus on the new type at depth 1
-    handleFocus(referenceTo, 1)
+    // Focus on the new type at depth 0 (isolated)
+    handleFocus(referenceTo, 0)
   }, [focusState, types, handleFocus])
 
   // Keep ref in sync
@@ -1251,7 +1359,7 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
     if (history.length === 0) return
     const prev = history[history.length - 1]
     focusHistoryRef.current = history.slice(0, -1)
-    handleFocus(prev, 1)
+    handleFocus(prev, 0)
   }, [handleFocus])
 
   const handleExitFocus = useCallback(() => {
@@ -1278,10 +1386,17 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
       setLayoutApplied(false)
     }
   }, [setNodes, setEdges])
+  handleExitFocusRef.current = handleExitFocus
 
-  const handleToggleDepth = useCallback(() => {
+  const handleExpandDepth = useCallback(() => {
     if (!focusState) return
-    const newDepth = focusState.depth === 1 ? 2 : 1
+    const newDepth = Math.min(focusState.depth + 1, 2) as 0 | 1 | 2
+    handleFocus(focusState.typeName, newDepth)
+  }, [focusState, handleFocus])
+
+  const handleFocusDepth = useCallback(() => {
+    if (!focusState) return
+    const newDepth = Math.max(focusState.depth - 1, 0) as 0 | 1 | 2
     handleFocus(focusState.typeName, newDepth)
   }, [focusState, handleFocus])
 
@@ -1308,7 +1423,7 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
         const hiddenCount = types.length - neighbourhood.size
         return (
           <div className="absolute top-3 left-3 z-10 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-xs px-3 py-1.5 rounded-md">
-            Submitted showing <span className="font-semibold text-blue-800 dark:text-blue-200">{initialFocusState.typeName}</span> and connected types · <span className="font-semibold text-blue-800 dark:text-blue-200">{hiddenCount}</span> type{hiddenCount !== 1 ? 's' : ''} hidden
+            Submitted showing <span className="font-semibold text-blue-800 dark:text-blue-200">{initialFocusState.typeName}</span>{initialFocusState.depth > 0 ? ' and connected types' : ''} · <span className="font-semibold text-blue-800 dark:text-blue-200">{hiddenCount}</span> type{hiddenCount !== 1 ? 's' : ''} hidden
           </div>
         )
       })()}
@@ -1317,11 +1432,13 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
           typeName={focusState.typeName}
           depth={focusState.depth}
           connectedCount={nodes.length - 1}
-          canExpand={getNeighbourhood(types, focusState.typeName, 2).size > getNeighbourhood(types, focusState.typeName, 1).size}
+          canExpand={focusState.depth < 2 && getNeighbourhood(types, focusState.typeName, (focusState.depth + 1) as 0 | 1 | 2).size > getNeighbourhood(types, focusState.typeName, focusState.depth).size}
+          canFocus={focusState.depth > 0}
           canGoBack={focusHistoryRef.current.length > 0}
           backTypeName={focusHistoryRef.current.length > 0 ? focusHistoryRef.current[focusHistoryRef.current.length - 1] : undefined}
           onClose={handleExitFocus}
-          onToggleDepth={handleToggleDepth}
+          onExpandDepth={handleExpandDepth}
+          onFocusDepth={handleFocusDepth}
           onBack={handleFocusBack}
         />
       )}
@@ -1347,6 +1464,7 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
         panOnScroll
         zoomOnScroll={false}
         zoomOnPinch
+        onMoveEnd={handleMoveEnd}
         noPanClassName="react-flow__nopan"
         proOptions={{ hideAttribution: true }}
         minZoom={0.1}
@@ -1393,8 +1511,8 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
           x={contextMenu.x}
           y={contextMenu.y}
           typeName={contextMenu.typeName}
-          onFocus={() => handleFocus(contextMenu.typeName, 1)}
-          onExpand={() => handleFocus(contextMenu.typeName, 2)}
+          onFocus={() => handleFocus(contextMenu.typeName, 0)}
+          onExpand={() => handleFocus(contextMenu.typeName, 1)}
           onClose={() => setContextMenu(null)}
         />
       )}
@@ -1408,9 +1526,10 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
 
 export interface SchemaGraphState {
   focusedType?: string
-  focusDepth?: 1 | 2
+  focusDepth?: 0 | 1 | 2
   isSearching: boolean
   visibleTypeCount: number
+  viewport?: { x: number; y: number; zoom: number }
 }
 
 export interface SchemaGraphProps {
@@ -1423,11 +1542,29 @@ export interface SchemaGraphProps {
   /** When set, the "Submitted" (original) layout shows only the focused neighbourhood */
   initialFocusState?: {
     typeName: string
-    depth: 1 | 2
+    depth: 0 | 1 | 2
   }
+  /** Callback when a cross-dataset reference lozenge is clicked */
+  onCrossDatasetNavigate?: (datasetName: string, typeName?: string, sourceTypeName?: string, projectId?: string) => void
+  /** Callback when a media library GDR lozenge is clicked */
+  onMediaLibraryClick?: (fieldName: string, typeName: string) => void
+  /** Callback when an inaccessible project GDR lozenge is clicked */
+  onInaccessibleClick?: (projectName: string, datasetName: string) => void
+  /** Set of project IDs the user can access — used to determine inaccessible GDR state */
+  accessibleProjectIds?: Set<string>
+  /** When set, programmatically focuses on this type (used for cross-dataset navigation) */
+  pendingFocusType?: string | null
+  /** Depth for pendingFocusType (default: 0) */
+  pendingFocusDepth?: 0 | 1 | 2
+  /** Called on every viewport change (pan/zoom end) — use for saving viewport without triggering re-renders */
+  onViewportChange?: (viewport: { x: number; y: number; zoom: number }) => void
+  /** When set, restores this viewport position (used for back navigation) */
+  restoreViewport?: { x: number; y: number; zoom: number } | null
+  /** Instant viewport Y nudge (for nav collapse/expand center compensation). Increment trigger to apply. */
+  viewportNudge?: { dy: number; trigger: number } | null
 }
 
-export function SchemaGraph({ types, initialPositions, initialEdgeStyle, onStateChange, fitViewTrigger, initialFocusState }: SchemaGraphProps) {
+export function SchemaGraph({ types, initialPositions, initialEdgeStyle, onStateChange, fitViewTrigger, initialFocusState, onCrossDatasetNavigate, onMediaLibraryClick, onInaccessibleClick, accessibleProjectIds, pendingFocusType, pendingFocusDepth, onViewportChange, restoreViewport, viewportNudge }: SchemaGraphProps) {
   if (types.length === 0) {
     return (
       <div className="flex items-center justify-center w-full h-full text-gray-400 text-sm">
@@ -1439,7 +1576,7 @@ export function SchemaGraph({ types, initialPositions, initialEdgeStyle, onState
   return (
     <div style={{ width: '100%', height: '100%', minHeight: 500 }}>
       <ReactFlowProvider>
-        <SchemaGraphInner types={types} initialPositions={initialPositions} initialEdgeStyle={initialEdgeStyle} onStateChange={onStateChange} fitViewTrigger={fitViewTrigger} initialFocusState={initialFocusState} />
+        <SchemaGraphInner types={types} initialPositions={initialPositions} initialEdgeStyle={initialEdgeStyle} onStateChange={onStateChange} fitViewTrigger={fitViewTrigger} initialFocusState={initialFocusState} onCrossDatasetNavigate={onCrossDatasetNavigate} onMediaLibraryClick={onMediaLibraryClick} onInaccessibleClick={onInaccessibleClick} accessibleProjectIds={accessibleProjectIds} pendingFocusType={pendingFocusType} pendingFocusDepth={pendingFocusDepth} onViewportChange={onViewportChange} restoreViewport={restoreViewport} viewportNudge={viewportNudge} />
       </ReactFlowProvider>
     </div>
   )

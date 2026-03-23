@@ -18,7 +18,7 @@ export interface ExportContext {
   orgName?: string
   workspaceName?: string
   focusedType?: string
-  focusDepth?: 1 | 2
+  focusDepth?: 0 | 1 | 2
 }
 
 export interface ExportMenuItem {
