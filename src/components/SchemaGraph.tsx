@@ -968,16 +968,18 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
       handleExitFocusRef.current?.()
       return
     }
+    // Wait for layout to complete before applying focus — otherwise fitView races with focus
+    if (!layoutApplied) return
     // Check if the target type exists in current types
     const targetExists = types.some(t => t.name === pendingFocusType)
     if (targetExists && handleFocusRef.current) {
       pendingFocusHandledRef.current = pendingFocusType
-      // Apply focus with a small delay to let layout settle
+      // Small delay for fitView animation to finish, then apply focus
       setTimeout(() => {
         handleFocusRef.current?.(pendingFocusType, pendingFocusDepth)
-      }, 300)
+      }, 100)
     }
-  }, [pendingFocusType, pendingFocusDepth, types])
+  }, [pendingFocusType, pendingFocusDepth, types, layoutApplied])
 
   // Restore viewport from back navigation
   // skipFitViewRef declared here (before synchronous check) to avoid TDZ error
