@@ -44,11 +44,15 @@ function generateFieldCode(field: DiscoveredField, indent: string): string {
   }
 
   if (field.type === 'reference' && field.referenceTo) {
+    const targets = field.referenceTargets && field.referenceTargets.length > 0
+      ? field.referenceTargets
+      : [field.referenceTo]
+    const toArr = targets.map(t => `{type: '${t}'}`).join(', ')
     lines.push(`${indent}defineField({`)
     lines.push(`${indent}  name: '${field.name}',`)
     lines.push(`${indent}  title: '${title}',`)
     lines.push(`${indent}  type: 'reference',`)
-    lines.push(`${indent}  to: [{type: '${field.referenceTo}'}],`)
+    lines.push(`${indent}  to: [${toArr}],`)
     lines.push(`${indent}}),`)
     return lines.join('\n')
   }
@@ -59,7 +63,11 @@ function generateFieldCode(field: DiscoveredField, indent: string): string {
     lines.push(`${indent}  title: '${title}',`)
     lines.push(`${indent}  type: 'array',`)
     if (field.isReference && field.referenceTo) {
-      lines.push(`${indent}  of: [defineArrayMember({type: 'reference', to: [{type: '${field.referenceTo}'}]})],`)
+      const targets = field.referenceTargets && field.referenceTargets.length > 0
+        ? field.referenceTargets
+        : [field.referenceTo]
+      const toArr = targets.map(t => `{type: '${t}'}`).join(', ')
+      lines.push(`${indent}  of: [defineArrayMember({type: 'reference', to: [${toArr}]})],`)
     } else {
       lines.push(`${indent}  of: [{type: 'string'}],`)
     }
@@ -69,11 +77,15 @@ function generateFieldCode(field: DiscoveredField, indent: string): string {
 
   if (field.type === 'object') {
     if (field.isInlineObject && field.referenceTo) {
+      const targets = field.referenceTargets && field.referenceTargets.length > 0
+        ? field.referenceTargets
+        : [field.referenceTo]
+      const toArr = targets.map(t => `{type: '${t}'}`).join(', ')
       lines.push(`${indent}defineField({`)
       lines.push(`${indent}  name: '${field.name}',`)
       lines.push(`${indent}  title: '${title}',`)
       lines.push(`${indent}  type: 'reference',`)
-      lines.push(`${indent}  to: [{type: '${field.referenceTo}'}],`)
+      lines.push(`${indent}  to: [${toArr}],`)
       lines.push(`${indent}}),`)
     } else {
       lines.push(`${indent}defineField({`)
@@ -141,8 +153,12 @@ function getReferencedTypeNames(types: DiscoveredType[]): Set<string> {
   const typeNames = new Set(types.map((t) => t.name))
   for (const type of types) {
     for (const field of type.fields) {
-      if (field.isReference && field.referenceTo && typeNames.has(field.referenceTo)) {
-        referenced.add(field.referenceTo)
+      if (!field.isReference) continue
+      const targets = field.referenceTargets && field.referenceTargets.length > 0
+        ? field.referenceTargets
+        : (field.referenceTo ? [field.referenceTo] : [])
+      for (const t of targets) {
+        if (typeNames.has(t)) referenced.add(t)
       }
     }
   }
@@ -155,11 +171,16 @@ function getReferencedByMap(types: DiscoveredType[]): Map<string, string[]> {
   const typeNames = new Set(types.map((t) => t.name))
   for (const type of types) {
     for (const field of type.fields) {
-      if (field.isReference && field.referenceTo && typeNames.has(field.referenceTo)) {
-        const existing = refBy.get(field.referenceTo) || []
+      if (!field.isReference) continue
+      const targets = field.referenceTargets && field.referenceTargets.length > 0
+        ? field.referenceTargets
+        : (field.referenceTo ? [field.referenceTo] : [])
+      for (const t of targets) {
+        if (!typeNames.has(t)) continue
+        const existing = refBy.get(t) || []
         if (!existing.includes(type.name)) {
           existing.push(type.name)
-          refBy.set(field.referenceTo, existing)
+          refBy.set(t, existing)
         }
       }
     }

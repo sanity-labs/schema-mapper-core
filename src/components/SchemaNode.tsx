@@ -106,7 +106,19 @@ function FieldRow({
   const isInline = field.isInlineObject === true;
   const style = fieldBadgeStyle(isInline ? 'object' : field.type);
   const even = index % 2 === 0;
-  const isOrphaned = isRef && field.referenceTo && visibleTypeNames && !visibleTypeNames.has(field.referenceTo);
+
+  // All reference targets (handles multi-target refs)
+  const allTargets: string[] = isRef
+    ? (field.referenceTargets && field.referenceTargets.length > 0
+        ? field.referenceTargets
+        : (field.referenceTo ? [field.referenceTo] : []))
+    : [];
+  // Orphaned targets — ones the user can't see on the current canvas
+  const orphanedTargets = visibleTypeNames
+    ? allTargets.filter(t => !visibleTypeNames.has(t))
+    : [];
+  // For row-level click: focus the first target by default
+  const primaryTarget = allTargets[0];
 
   return (
     <div
@@ -121,11 +133,12 @@ function FieldRow({
       data-field-is-inline={field.isInlineObject ? 'true' : undefined}
       data-field-is-array={field.isArray ? 'true' : undefined}
       data-field-ref-to={field.referenceTo || undefined}
-      onClick={isRef && field.referenceTo && onReferenceClick ? (e: React.MouseEvent) => {
+      data-field-ref-targets={allTargets.length > 1 ? allTargets.join(',') : undefined}
+      onClick={isRef && primaryTarget && onReferenceClick ? (e: React.MouseEvent) => {
         e.stopPropagation();
-        onReferenceClick(field.referenceTo!);
+        onReferenceClick(primaryTarget);
       } : undefined}
-      style={isRef && field.referenceTo && onReferenceClick ? { cursor: 'pointer' } : undefined}
+      style={isRef && primaryTarget && onReferenceClick ? { cursor: 'pointer' } : undefined}
     >
       {/* Field name */}
       <span
@@ -139,6 +152,7 @@ function FieldRow({
       <Badge
         variant={style.variant}
         className={`shrink-0 px-1.5 py-0 text-[10px] leading-4 font-normal ${style.className}`}
+        title={isRef && allTargets.length > 1 ? `Accepts: ${allTargets.join(', ')}` : undefined}
       >
         {isRef && <ArrowRight className="mr-0.5 h-2.5 w-2.5" />}
         {isInline ? field.referenceTo : field.type}
@@ -155,19 +169,24 @@ function FieldRow({
         />
       )}
 
-      {/* Orphaned reference lozenge — shown when target type is not in current view */}
-      {isOrphaned && onReferenceClick && (
-        <button
-          className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-[calc(100%+8px)] z-10 flex items-center gap-1 px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 text-[10px] font-medium border border-indigo-200 dark:border-indigo-700 hover:bg-indigo-200 dark:hover:bg-indigo-800/50 transition-colors whitespace-nowrap shadow-sm"
-          onClick={(e) => {
-            e.stopPropagation();
-            onReferenceClick(field.referenceTo!);
-          }}
-          title={`Focus on ${field.referenceTo}`}
-        >
-          <ArrowRight className="w-2.5 h-2.5" />
-          {field.referenceTo}
-        </button>
+      {/* Orphaned reference lozenge(s) — one per target type that's not in current view */}
+      {orphanedTargets.length > 0 && onReferenceClick && (
+        <div className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-[calc(100%+8px)] z-10 flex items-center gap-1">
+          {orphanedTargets.map((target, i) => (
+            <button
+              key={target}
+              className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 text-[10px] font-medium border border-indigo-200 dark:border-indigo-700 hover:bg-indigo-200 dark:hover:bg-indigo-800/50 transition-colors whitespace-nowrap shadow-sm"
+              onClick={(e) => {
+                e.stopPropagation();
+                onReferenceClick(target);
+              }}
+              title={`Focus on ${target}`}
+            >
+              {i === 0 && <ArrowRight className="w-2.5 h-2.5" />}
+              {target}
+            </button>
+          ))}
+        </div>
       )}
 
       {/* Cross-dataset reference lozenge — shown for fields referencing another dataset/project */}
@@ -256,12 +275,15 @@ function SchemaNode({ data }: NodeProps<SchemaNodeType>) {
   // Check if any reference fields point to types not in the current view
   const hasOrphanedRefs = useMemo(() => {
     if (!visibleTypeNames || !onReferenceClick) return false;
-    return fields.some(f =>
-      !f.isCrossDatasetReference &&
-      (f.isReference || f.type === 'reference') &&
-      f.referenceTo &&
-      !visibleTypeNames.has(f.referenceTo)
-    );
+    return fields.some(f => {
+      if (f.isCrossDatasetReference) return false;
+      if (!(f.isReference || f.type === 'reference')) return false;
+      const targets = f.referenceTargets && f.referenceTargets.length > 0
+        ? f.referenceTargets
+        : (f.referenceTo ? [f.referenceTo] : []);
+      // A field has orphan refs if ANY of its targets are off-canvas
+      return targets.some(t => !visibleTypeNames.has(t));
+    });
   }, [fields, visibleTypeNames, onReferenceClick]);
 
   // Check if any cross-dataset reference fields exist (need overflow for lozenges)

@@ -252,12 +252,16 @@ export function ExportDropdown({ graphRef, context, types, onExport, extraMenuIt
           const isInlineObject = el.dataset.fieldIsInline === 'true'
           const isArray = el.dataset.fieldIsArray === 'true'
           const referenceTo = el.dataset.fieldRefTo || undefined
+          const referenceTargets = el.dataset.fieldRefTargets
+            ? el.dataset.fieldRefTargets.split(',').filter(Boolean)
+            : undefined
 
           fields.push({
             name,
             type: isReference ? 'reference' : isInlineObject ? 'object' : type,
             isReference,
             referenceTo,
+            referenceTargets,
             isArray,
             isInlineObject,
           })
@@ -421,7 +425,11 @@ export function ExportDropdown({ graphRef, context, types, onExport, extraMenuIt
               name: f.name,
               ...(f.title ? { title: f.title } : {}),
               type: f.type,
-              ...(f.isReference ? { isReference: true, referenceTo: f.referenceTo } : {}),
+              ...(f.isReference ? {
+                isReference: true,
+                referenceTo: f.referenceTo,
+                ...(f.referenceTargets && f.referenceTargets.length > 1 ? { referenceTargets: f.referenceTargets } : {}),
+              } : {}),
               ...(f.isArray ? { isArray: true } : {}),
               ...(f.isInlineObject ? { isInlineObject: true, referenceTo: f.referenceTo } : {}),
             })),

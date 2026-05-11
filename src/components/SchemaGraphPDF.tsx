@@ -28,6 +28,7 @@ export interface PDFNodeData {
     type: string
     isReference?: boolean
     referenceTo?: string
+    referenceTargets?: string[]
     isArray?: boolean
     isInlineObject?: boolean
   }>
