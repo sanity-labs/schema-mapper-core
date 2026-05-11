@@ -440,19 +440,26 @@ function getNeighbourhood(
   // 0-hop: just the focused type itself
   if (depth === 0) return included
 
+  // Inline helper: all reference targets for a field (handles multi-target refs)
+  const targetsOf = (field: DiscoveredField): string[] => {
+    if (field.referenceTargets && field.referenceTargets.length > 0) return field.referenceTargets
+    if (field.referenceTo) return [field.referenceTo]
+    return []
+  }
+
   // 1-hop: direct connections (references to and from)
   const focusType = typeMap.get(focusTypeName)
   if (focusType) {
     for (const field of focusType.fields) {
-      if ((field.isReference || field.isInlineObject) && field.referenceTo) {
-        included.add(field.referenceTo)
+      if (field.isReference || field.isInlineObject) {
+        for (const t of targetsOf(field)) included.add(t)
       }
     }
   }
   // Also find types that reference the focus type
   for (const type of types) {
     for (const field of type.fields) {
-      if ((field.isReference || field.isInlineObject) && field.referenceTo === focusTypeName) {
+      if ((field.isReference || field.isInlineObject) && targetsOf(field).includes(focusTypeName)) {
         included.add(type.name)
       }
     }
@@ -465,15 +472,20 @@ function getNeighbourhood(
       const type = typeMap.get(name)
       if (!type) continue
       for (const field of type.fields) {
-        if ((field.isReference || field.isInlineObject) && field.referenceTo) {
-          included.add(field.referenceTo)
+        if (field.isReference || field.isInlineObject) {
+          for (const t of targetsOf(field)) included.add(t)
         }
       }
       // Also find types that reference any 1-hop type
       for (const t of types) {
         for (const field of t.fields) {
-          if ((field.isReference || field.isInlineObject) && field.referenceTo && firstHop.has(field.referenceTo)) {
-            included.add(t.name)
+          if (field.isReference || field.isInlineObject) {
+            for (const tgt of targetsOf(field)) {
+              if (firstHop.has(tgt)) {
+                included.add(t.name)
+                break
+              }
+            }
           }
         }
       }
@@ -653,14 +665,15 @@ function buildNodesAndEdges(
       ...extraNodeData,
       // Compute per-node: does this node have orphaned refs that add right margin?
       orphanedRefPadding: extraNodeData?.visibleTypeNames
-        ? type.fields.some(f =>
-            // Orphaned refs (reference to type not in current view)
-            ((f.isReference || f.type === 'reference') &&
-              f.referenceTo &&
-              !extraNodeData.visibleTypeNames!.has(f.referenceTo)) ||
-            // Cross-dataset refs always hang off the side
-            f.isCrossDatasetReference
-          ) ? 130 : 0
+        ? type.fields.some(f => {
+            if (f.isCrossDatasetReference) return true
+            if (!(f.isReference || f.type === 'reference')) return false
+            const targets = f.referenceTargets && f.referenceTargets.length > 0
+              ? f.referenceTargets
+              : (f.referenceTo ? [f.referenceTo] : [])
+            // Orphaned only if NONE of the targets are visible
+            return targets.length > 0 && !targets.some(t => extraNodeData.visibleTypeNames!.has(t))
+          }) ? 130 : 0
         : (type.fields.some(f => f.isCrossDatasetReference) ? 130 : 0),
     },
   }))
@@ -685,18 +698,29 @@ function buildNodesAndEdges(
 
   types.forEach((type) => {
     type.fields.forEach((field) => {
-      const hasEdge = !field.isCrossDatasetReference && (field.isReference || field.isInlineObject) && field.referenceTo && typeNames.has(field.referenceTo)
-      if (hasEdge) {
-        if (!sourceColorMap.has(type.name)) {
-          sourceColorMap.set(type.name, edgeColors[colorIdx % edgeColors.length])
-          colorIdx++
-        }
-        const color = sourceColorMap.get(type.name)!
-        const isInline = field.isInlineObject
+      if (field.isCrossDatasetReference) return
+      if (!field.isReference && !field.isInlineObject) return
+
+      // Multi-target references emit one edge per target.
+      const allTargets = field.referenceTargets && field.referenceTargets.length > 0
+        ? field.referenceTargets
+        : (field.referenceTo ? [field.referenceTo] : [])
+
+      const visibleTargets = allTargets.filter((t) => typeNames.has(t))
+      if (visibleTargets.length === 0) return
+
+      if (!sourceColorMap.has(type.name)) {
+        sourceColorMap.set(type.name, edgeColors[colorIdx % edgeColors.length])
+        colorIdx++
+      }
+      const color = sourceColorMap.get(type.name)!
+      const isInline = field.isInlineObject
+
+      visibleTargets.forEach((target) => {
         edges.push({
-          id: `${type.name}-${field.name}->${field.referenceTo}`,
+          id: `${type.name}-${field.name}->${target}`,
           source: type.name,
-          target: field.referenceTo,
+          target,
           sourceHandle: `ref-${field.name}`,
           targetHandle: 'target-left',
           type: 'floating',
@@ -715,7 +739,7 @@ function buildNodesAndEdges(
           },
           data: { isInlineObject: isInline, edgeStyle },
         })
-      }
+      })
     })
   })
 

@@ -4,6 +4,13 @@ export type DiscoveredField = {
   type: 'string' | 'number' | 'boolean' | 'text' | 'url' | 'datetime' | 'image' | 'reference' | 'array' | 'object' | 'block' | 'slug' | 'unknown'
   isReference?: boolean
   referenceTo?: string
+  /**
+   * For references that accept multiple target document types
+   * (e.g. `to: [{type: 'a'}, {type: 'b'}]`). When set, `referenceTo` holds the
+   * first target for back-compat; `referenceTargets` holds the full list.
+   * When omitted/single-target, treat as [referenceTo].
+   */
+  referenceTargets?: string[]
   isArray?: boolean
   isInlineObject?: boolean
   isCrossDatasetReference?: boolean
