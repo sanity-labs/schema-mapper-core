@@ -2,7 +2,7 @@ import { Handle, Position, type NodeProps, type Node } from '@xyflow/react';
 import { Badge } from './ui/badge';
 import { ArrowRight } from 'lucide-react';
 import { GoDatabase, GoImage, GoLock } from 'react-icons/go';
-import React, { memo, useMemo } from 'react';
+import React, { memo, useMemo, useState, useEffect, useRef } from 'react';
 import { Tooltip, Box, Text } from '@sanity/ui';
 import type { DiscoveredField } from '../types';
 
@@ -70,6 +70,91 @@ function fieldBadgeStyle(type: DiscoveredField['type']): BadgeStyle {
     default:
       return { className: 'text-gray-500 border-gray-300', variant: 'outline' };
   }
+}
+
+// ---------------------------------------------------------------------------
+// Multi-target reference popover — collapses 3+ orphan targets into one
+// lozenge that opens a small floating panel.
+// ---------------------------------------------------------------------------
+
+function MultiTargetPopover({
+  targets,
+  allTargets,
+  fieldName,
+  onSelect,
+}: {
+  targets: string[]; // orphan targets (not on canvas) — what we navigate to
+  allTargets: string[]; // every target the field accepts — shown in header
+  fieldName: string;
+  onSelect: (target: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDocClick = (e: MouseEvent) => {
+      const target = e.target as unknown as globalThis.Node;
+      if (!wrapperRef.current?.contains(target)) setOpen(false);
+    };
+    const onEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    // Defer to next tick so the click that opened doesn't immediately close
+    const t = setTimeout(() => {
+      document.addEventListener('mousedown', onDocClick);
+      document.addEventListener('keydown', onEsc);
+    }, 0);
+    return () => {
+      clearTimeout(t);
+      document.removeEventListener('mousedown', onDocClick);
+      document.removeEventListener('keydown', onEsc);
+    };
+  }, [open]);
+
+  return (
+    <div
+      ref={wrapperRef}
+      className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-[calc(100%+8px)] z-10"
+    >
+      <button
+        className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 text-[10px] font-medium border border-indigo-200 dark:border-indigo-700 hover:bg-indigo-200 dark:hover:bg-indigo-800/50 transition-colors whitespace-nowrap shadow-sm"
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen(o => !o);
+        }}
+        title={`${targets.length} target types — click to list`}
+      >
+        <ArrowRight className="w-2.5 h-2.5" />
+        {targets.length} types
+      </button>
+      {open && (
+        <div
+          className="absolute left-0 top-full mt-1 z-50 min-w-[180px] max-w-[260px] max-h-[280px] overflow-y-auto rounded-md border border-indigo-200 dark:border-indigo-700 bg-white dark:bg-gray-900 shadow-lg py-1"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="px-2 py-1 border-b border-gray-100 dark:border-gray-800 text-[10px] uppercase tracking-wide text-gray-500 dark:text-gray-400 sticky top-0 bg-white dark:bg-gray-900">
+            {fieldName} → {allTargets.length} types
+          </div>
+          {targets.map((target) => (
+            <button
+              key={target}
+              className="w-full flex items-center gap-1.5 px-2 py-1 text-[11px] text-indigo-700 dark:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 text-left font-mono transition-colors"
+              onClick={(e) => {
+                e.stopPropagation();
+                setOpen(false);
+                onSelect(target);
+              }}
+              title={`Focus on ${target}`}
+            >
+              <ArrowRight className="w-2.5 h-2.5 flex-shrink-0" />
+              <span className="truncate">{target}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -169,24 +254,37 @@ function FieldRow({
         />
       )}
 
-      {/* Orphaned reference lozenge(s) — one per target type that's not in current view */}
+      {/* Orphaned reference lozenge(s) — target types not on the current canvas.
+          ≤2 orphans: render inline.
+          3+ orphans: collapse into a single "+N targets" lozenge with a
+          popover listing all of them, to avoid sprawling rows on heavy
+          multi-target fields (e.g. 19-target sales playbook refs). */}
       {orphanedTargets.length > 0 && onReferenceClick && (
-        <div className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-[calc(100%+8px)] z-10 flex items-center gap-1">
-          {orphanedTargets.map((target, i) => (
-            <button
-              key={target}
-              className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 text-[10px] font-medium border border-indigo-200 dark:border-indigo-700 hover:bg-indigo-200 dark:hover:bg-indigo-800/50 transition-colors whitespace-nowrap shadow-sm"
-              onClick={(e) => {
-                e.stopPropagation();
-                onReferenceClick(target);
-              }}
-              title={`Focus on ${target}`}
-            >
-              {i === 0 && <ArrowRight className="w-2.5 h-2.5" />}
-              {target}
-            </button>
-          ))}
-        </div>
+        orphanedTargets.length <= 2 ? (
+          <div className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-[calc(100%+8px)] z-10 flex items-center gap-1">
+            {orphanedTargets.map((target, i) => (
+              <button
+                key={target}
+                className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 text-[10px] font-medium border border-indigo-200 dark:border-indigo-700 hover:bg-indigo-200 dark:hover:bg-indigo-800/50 transition-colors whitespace-nowrap shadow-sm"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onReferenceClick(target);
+                }}
+                title={`Focus on ${target}`}
+              >
+                {i === 0 && <ArrowRight className="w-2.5 h-2.5" />}
+                {target}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <MultiTargetPopover
+            targets={orphanedTargets}
+            allTargets={allTargets}
+            fieldName={field.name}
+            onSelect={onReferenceClick}
+          />
+        )
       )}
 
       {/* Cross-dataset reference lozenge — shown for fields referencing another dataset/project */}
