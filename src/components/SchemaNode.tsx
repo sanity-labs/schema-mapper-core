@@ -2,7 +2,7 @@ import { Handle, Position, type NodeProps, type Node } from '@xyflow/react';
 import { Badge } from './ui/badge';
 import { ArrowRight } from 'lucide-react';
 import { GoDatabase, GoImage, GoLock } from 'react-icons/go';
-import React, { memo, useMemo, useState, useEffect, useRef } from 'react';
+import React, { memo, useMemo, useState } from 'react';
 import { Tooltip, Box, Text } from '@sanity/ui';
 import type { DiscoveredField } from '../types';
 
@@ -73,83 +73,65 @@ function fieldBadgeStyle(type: DiscoveredField['type']): BadgeStyle {
 }
 
 // ---------------------------------------------------------------------------
-// Multi-target reference popover — collapses 3+ orphan targets into one
-// lozenge that opens a small floating panel.
+// Multi-target reference toggle — collapses 3+ orphan targets into a single
+// "→ N types" lozenge that expands to show all of them as stacked lozenge
+// pairs (rows of 2), tightly coupled to the toggle so it reads as one unit.
 // ---------------------------------------------------------------------------
 
 function MultiTargetPopover({
   targets,
-  allTargets,
   fieldName,
   onSelect,
 }: {
-  targets: string[]; // orphan targets (not on canvas) — what we navigate to
-  allTargets: string[]; // every target the field accepts — shown in header
+  targets: string[]; // orphan targets (off-canvas) — what we can navigate to
   fieldName: string;
   onSelect: (target: string) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const wrapperRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    if (!open) return;
-    const onDocClick = (e: MouseEvent) => {
-      const target = e.target as unknown as globalThis.Node;
-      if (!wrapperRef.current?.contains(target)) setOpen(false);
-    };
-    const onEsc = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false);
-    };
-    // Defer to next tick so the click that opened doesn't immediately close
-    const t = setTimeout(() => {
-      document.addEventListener('mousedown', onDocClick);
-      document.addEventListener('keydown', onEsc);
-    }, 0);
-    return () => {
-      clearTimeout(t);
-      document.removeEventListener('mousedown', onDocClick);
-      document.removeEventListener('keydown', onEsc);
-    };
-  }, [open]);
+  // Group targets into pairs for the stacked-rows-of-2 layout.
+  const pairs: string[][] = [];
+  for (let i = 0; i < targets.length; i += 2) {
+    pairs.push(targets.slice(i, i + 2));
+  }
 
   return (
     <div
-      ref={wrapperRef}
-      className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-[calc(100%+8px)] z-10"
+      className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-[calc(100%+8px)] z-10 flex flex-col items-start gap-1"
+      title={open ? '' : `Click to list ${targets.length} target types`}
     >
       <button
-        className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 text-[10px] font-medium border border-indigo-200 dark:border-indigo-700 hover:bg-indigo-200 dark:hover:bg-indigo-800/50 transition-colors whitespace-nowrap shadow-sm"
+        className={`flex items-center gap-1 px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 text-[10px] font-medium border border-indigo-200 dark:border-indigo-700 hover:bg-indigo-200 dark:hover:bg-indigo-800/50 transition-colors whitespace-nowrap shadow-sm ${open ? 'ring-1 ring-indigo-400' : ''}`}
         onClick={(e) => {
           e.stopPropagation();
           setOpen(o => !o);
         }}
-        title={`${targets.length} target types — click to list`}
+        title={`${fieldName} → ${targets.length} types${open ? ' (click to collapse)' : ''}`}
       >
-        <ArrowRight className="w-2.5 h-2.5" />
+        <ArrowRight className={`w-2.5 h-2.5 transition-transform ${open ? 'rotate-90' : ''}`} />
         {targets.length} types
       </button>
       {open && (
         <div
-          className="absolute left-0 top-full mt-1 z-50 min-w-[180px] max-w-[260px] max-h-[280px] overflow-y-auto rounded-md border border-indigo-200 dark:border-indigo-700 bg-white dark:bg-gray-900 shadow-lg py-1"
+          className="flex flex-col gap-0.5 ml-3"
           onClick={(e) => e.stopPropagation()}
         >
-          <div className="px-2 py-1 border-b border-gray-100 dark:border-gray-800 text-[10px] uppercase tracking-wide text-gray-500 dark:text-gray-400 sticky top-0 bg-white dark:bg-gray-900">
-            {fieldName} → {allTargets.length} types
-          </div>
-          {targets.map((target) => (
-            <button
-              key={target}
-              className="w-full flex items-center gap-1.5 px-2 py-1 text-[11px] text-indigo-700 dark:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 text-left font-mono transition-colors"
-              onClick={(e) => {
-                e.stopPropagation();
-                setOpen(false);
-                onSelect(target);
-              }}
-              title={`Focus on ${target}`}
-            >
-              <ArrowRight className="w-2.5 h-2.5 flex-shrink-0" />
-              <span className="truncate">{target}</span>
-            </button>
+          {pairs.map((pair, rowIdx) => (
+            <div key={rowIdx} className="flex items-center gap-0.5">
+              {pair.map((target) => (
+                <button
+                  key={target}
+                  className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 text-[10px] font-medium border border-indigo-200 dark:border-indigo-700 hover:bg-indigo-200 dark:hover:bg-indigo-800/50 transition-colors whitespace-nowrap shadow-sm font-mono"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onSelect(target);
+                  }}
+                  title={`Focus on ${target}`}
+                >
+                  {target}
+                </button>
+              ))}
+            </div>
           ))}
         </div>
       )}
@@ -280,7 +262,6 @@ function FieldRow({
         ) : (
           <MultiTargetPopover
             targets={orphanedTargets}
-            allTargets={allTargets}
             fieldName={field.name}
             onSelect={onReferenceClick}
           />
@@ -379,7 +360,7 @@ function SchemaNode({ data }: NodeProps<SchemaNodeType>) {
       const targets = f.referenceTargets && f.referenceTargets.length > 0
         ? f.referenceTargets
         : (f.referenceTo ? [f.referenceTo] : []);
-      // A field has orphan refs if ANY of its targets are off-canvas
+      // A row has an orphan lozenge if ANY of its targets are off-canvas
       return targets.some(t => !visibleTypeNames.has(t));
     });
   }, [fields, visibleTypeNames, onReferenceClick]);
