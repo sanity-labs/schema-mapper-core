@@ -2,7 +2,7 @@ import { Handle, Position, type NodeProps, type Node } from '@xyflow/react';
 import { Badge } from './ui/badge';
 import { ArrowRight } from 'lucide-react';
 import { GoDatabase, GoImage, GoLock } from 'react-icons/go';
-import React, { memo, useMemo } from 'react';
+import React, { memo, useMemo, useState, useEffect, useRef } from 'react';
 import { Tooltip, Box, Text } from '@sanity/ui';
 import type { DiscoveredField } from '../types';
 
@@ -73,6 +73,124 @@ function fieldBadgeStyle(type: DiscoveredField['type']): BadgeStyle {
 }
 
 // ---------------------------------------------------------------------------
+// Multi-target reference toggle — collapses 3+ orphan targets into a single
+// "→ N types" lozenge that expands to show all of them as stacked lozenge
+// pairs (rows of 2), tightly coupled to the toggle so it reads as one unit.
+// ---------------------------------------------------------------------------
+
+function MultiTargetPopover({
+  targets,
+  fieldName,
+  onSelect,
+  onOpenChange,
+}: {
+  targets: string[]; // orphan targets (off-canvas) — what we can navigate to
+  fieldName: string;
+  onSelect: (target: string) => void;
+  onOpenChange?: (open: boolean) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+
+  // Notify parent so it can bump the SchemaNode's z-index above siblings.
+  useEffect(() => {
+    onOpenChange?.(open);
+  }, [open, onOpenChange]);
+
+  // Outside-click / Escape to close. Detect against the wrapper ref so a click
+  // anywhere outside the lozenge cluster (including on other field rows in
+  // the same node, or other nodes) closes the expansion.
+  //
+  // Uses capture-phase listeners because React Flow's pane handler can
+  // intercept bubbling mousedown/pointerdown events on the canvas. Capture
+  // fires before any node-tree handler.
+  useEffect(() => {
+    if (!open) return;
+    const onDocDown = (e: Event) => {
+      const target = e.target as unknown as globalThis.Node;
+      if (!wrapperRef.current?.contains(target)) setOpen(false);
+    };
+    const onEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    // Defer one tick so the click that opened doesn't immediately close
+    const t = setTimeout(() => {
+      document.addEventListener('mousedown', onDocDown, true);
+      document.addEventListener('pointerdown', onDocDown, true);
+      document.addEventListener('keydown', onEsc, true);
+    }, 0);
+    return () => {
+      clearTimeout(t);
+      document.removeEventListener('mousedown', onDocDown, true);
+      document.removeEventListener('pointerdown', onDocDown, true);
+      document.removeEventListener('keydown', onEsc, true);
+    };
+  }, [open]);
+
+  // Group targets into pairs for the stacked-rows-of-2 layout.
+  const pairs: string[][] = [];
+  for (let i = 0; i < targets.length; i += 2) {
+    pairs.push(targets.slice(i, i + 2));
+  }
+
+  return (
+    <div
+      ref={wrapperRef}
+      // Anchor the wrapper so the *toggle* (the first child) stays vertically
+      // centered on the field row regardless of whether the expansion is open.
+      // Toggle is ~20px tall → offset by half that from the row center.
+      // We don't use top-1/2 -translate-y-1/2 because that re-centers the
+      // *entire* wrapper (toggle + expanded list) and drifts the toggle off
+      // the row when the list grows.
+      className="absolute right-0 translate-x-[calc(100%+8px)] flex flex-col items-start gap-1.5"
+      style={{ top: 'calc(50% - 10px)', zIndex: open ? 50 : 10 }}
+    >
+      <button
+        className={`flex items-center gap-1 px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 text-[10px] font-medium border border-indigo-200 dark:border-indigo-700 hover:bg-indigo-200 dark:hover:bg-indigo-800/50 transition-colors whitespace-nowrap shadow-sm ${open ? 'ring-1 ring-indigo-400' : ''}`}
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen(o => !o);
+        }}
+        title={`${fieldName} → ${targets.length} types${open ? ' (click to collapse)' : ''}`}
+      >
+        <ArrowRight className={`w-2.5 h-2.5 transition-transform ${open ? 'rotate-90' : ''}`} />
+        {targets.length} types
+      </button>
+      {open && (
+        <div
+          // Faded backdrop: large rounded corners, blocks bleed-through of
+          // edges/lozenges underneath. `nopan nodrag` keep React Flow from
+          // panning the canvas while interacting with the cluster.
+          className="nopan nodrag flex flex-col gap-1.5 ml-4 p-1.5 rounded-2xl bg-white/85 dark:bg-gray-900/85 backdrop-blur-sm border border-indigo-100 dark:border-indigo-800/60 shadow-md"
+          onClick={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
+          onPointerDown={(e) => e.stopPropagation()}
+        >
+          {pairs.map((pair, rowIdx) => (
+            <div key={rowIdx} className="flex items-center gap-1.5">
+              {pair.map((target) => (
+                <button
+                  key={target}
+                  className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 text-[10px] font-medium border border-indigo-200 dark:border-indigo-700 hover:bg-indigo-200 dark:hover:bg-indigo-800/50 transition-colors whitespace-nowrap shadow-sm"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onSelect(target);
+                  }}
+                  title={`Focus on ${target}`}
+                >
+                  <ArrowRight className="w-2.5 h-2.5" />
+                  {target}
+                </button>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Field Row
 // ---------------------------------------------------------------------------
 
@@ -88,6 +206,7 @@ function FieldRow({
   accessibleProjectIds,
   visibleTypeNames,
   sourceTypeName,
+  onMultiTargetOpenChange,
 }: {
   field: DiscoveredField;
   index: number;
@@ -100,6 +219,9 @@ function FieldRow({
   accessibleProjectIds?: Set<string>;
   visibleTypeNames?: Set<string>;
   sourceTypeName?: string;
+  /** Notify parent SchemaNode when this row's multi-target lozenge expands,
+   *  so the node can bump its z-index to render above sibling nodes. */
+  onMultiTargetOpenChange?: (fieldName: string, open: boolean) => void;
 }) {
   const isCrossDataset = field.isCrossDatasetReference === true;
   const isRef = !isCrossDataset && (field.isReference || field.type === 'reference');
@@ -169,24 +291,37 @@ function FieldRow({
         />
       )}
 
-      {/* Orphaned reference lozenge(s) — one per target type that's not in current view */}
+      {/* Orphaned reference lozenge(s) — target types not on the current canvas.
+          ≤2 orphans: render inline.
+          3+ orphans: collapse into a single "+N targets" lozenge with a
+          popover listing all of them, to avoid sprawling rows on heavy
+          multi-target fields (e.g. 19-target sales playbook refs). */}
       {orphanedTargets.length > 0 && onReferenceClick && (
-        <div className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-[calc(100%+8px)] z-10 flex items-center gap-1">
-          {orphanedTargets.map((target, i) => (
-            <button
-              key={target}
-              className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 text-[10px] font-medium border border-indigo-200 dark:border-indigo-700 hover:bg-indigo-200 dark:hover:bg-indigo-800/50 transition-colors whitespace-nowrap shadow-sm"
-              onClick={(e) => {
-                e.stopPropagation();
-                onReferenceClick(target);
-              }}
-              title={`Focus on ${target}`}
-            >
-              {i === 0 && <ArrowRight className="w-2.5 h-2.5" />}
-              {target}
-            </button>
-          ))}
-        </div>
+        orphanedTargets.length <= 2 ? (
+          <div className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-[calc(100%+8px)] z-10 flex items-center gap-1">
+            {orphanedTargets.map((target) => (
+              <button
+                key={target}
+                className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 text-[10px] font-medium border border-indigo-200 dark:border-indigo-700 hover:bg-indigo-200 dark:hover:bg-indigo-800/50 transition-colors whitespace-nowrap shadow-sm"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onReferenceClick(target);
+                }}
+                title={`Focus on ${target}`}
+              >
+                <ArrowRight className="w-2.5 h-2.5" />
+                {target}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <MultiTargetPopover
+            targets={orphanedTargets}
+            fieldName={field.name}
+            onSelect={onReferenceClick}
+            onOpenChange={(open) => onMultiTargetOpenChange?.(field.name, open)}
+          />
+        )
       )}
 
       {/* Cross-dataset reference lozenge — shown for fields referencing another dataset/project */}
@@ -281,7 +416,7 @@ function SchemaNode({ data }: NodeProps<SchemaNodeType>) {
       const targets = f.referenceTargets && f.referenceTargets.length > 0
         ? f.referenceTargets
         : (f.referenceTo ? [f.referenceTo] : []);
-      // A field has orphan refs if ANY of its targets are off-canvas
+      // A row has an orphan lozenge if ANY of its targets are off-canvas
       return targets.some(t => !visibleTypeNames.has(t));
     });
   }, [fields, visibleTypeNames, onReferenceClick]);
@@ -291,8 +426,36 @@ function SchemaNode({ data }: NodeProps<SchemaNodeType>) {
     return fields.some(f => f.isCrossDatasetReference && f.crossDatasetName);
   }, [fields]);
 
+  // Track which field rows have their multi-target lozenge cluster expanded.
+  // When any are open, bump this node's z-index so the expansion renders
+  // above sibling nodes/edges (React Flow stacks nodes via inline z-index).
+  const [openMultiTargets, setOpenMultiTargets] = useState<Set<string>>(new Set());
+  const handleMultiTargetOpenChange = useMemo(
+    () => (fieldName: string, open: boolean) => {
+      setOpenMultiTargets(prev => {
+        const next = new Set(prev);
+        if (open) next.add(fieldName);
+        else next.delete(fieldName);
+        return next;
+      });
+    },
+    [],
+  );
+  const anyMultiTargetOpen = openMultiTargets.size > 0;
+
   return (
-    <div className={"rounded-md border bg-card text-card-foreground min-w-[200px] max-w-[280px]" + (hasOrphanedRefs || hasCrossDatasetRefs ? " mr-[130px]" : "")} style={{ overflow: hasOrphanedRefs || hasCrossDatasetRefs ? 'visible' : 'hidden' }}>
+    <div
+      className={"rounded-md border bg-card text-card-foreground min-w-[200px] max-w-[280px]" + (hasOrphanedRefs || hasCrossDatasetRefs ? " mr-[130px]" : "")}
+      style={{
+        overflow: hasOrphanedRefs || hasCrossDatasetRefs ? 'visible' : 'hidden',
+        position: 'relative',
+        // Lift this node above siblings when a multi-target lozenge cluster
+        // is expanded. React Flow renders node containers with relative
+        // positioning, so a positive z-index here puts everything (node body
+        // + escaping lozenges) above other nodes/edges.
+        ...(anyMultiTargetOpen ? { zIndex: 1000 } : {}),
+      }}
+    >
       {/* ---- Invisible handles on all 4 sides for floating edge connections ---- */}
       <Handle
         type="target"
@@ -357,6 +520,7 @@ function SchemaNode({ data }: NodeProps<SchemaNodeType>) {
             accessibleProjectIds={accessibleProjectIds}
             visibleTypeNames={visibleTypeNames}
             sourceTypeName={typeName}
+            onMultiTargetOpenChange={handleMultiTargetOpenChange}
           />
         ))}
       </div>

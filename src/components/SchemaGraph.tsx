@@ -671,8 +671,11 @@ function buildNodesAndEdges(
             const targets = f.referenceTargets && f.referenceTargets.length > 0
               ? f.referenceTargets
               : (f.referenceTo ? [f.referenceTo] : [])
-            // Orphaned only if NONE of the targets are visible
-            return targets.length > 0 && !targets.some(t => extraNodeData.visibleTypeNames!.has(t))
+            // Reserve space if ANY target is off-canvas (a lozenge will render).
+            // (Previously checked "none visible", which broke when SOME targets
+            // were visible — the row still had a "+N" lozenge but edges anchored
+            // through it, causing a visible offset.)
+            return targets.length > 0 && targets.some(t => !extraNodeData.visibleTypeNames!.has(t))
           }) ? 130 : 0
         : (type.fields.some(f => f.isCrossDatasetReference) ? 130 : 0),
     },
