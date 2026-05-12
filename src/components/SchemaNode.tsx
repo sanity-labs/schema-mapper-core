@@ -100,9 +100,13 @@ function MultiTargetPopover({
   // Outside-click / Escape to close. Detect against the wrapper ref so a click
   // anywhere outside the lozenge cluster (including on other field rows in
   // the same node, or other nodes) closes the expansion.
+  //
+  // Uses capture-phase listeners because React Flow's pane handler can
+  // intercept bubbling mousedown/pointerdown events on the canvas. Capture
+  // fires before any node-tree handler.
   useEffect(() => {
     if (!open) return;
-    const onDocClick = (e: MouseEvent) => {
+    const onDocDown = (e: Event) => {
       const target = e.target as unknown as globalThis.Node;
       if (!wrapperRef.current?.contains(target)) setOpen(false);
     };
@@ -111,13 +115,15 @@ function MultiTargetPopover({
     };
     // Defer one tick so the click that opened doesn't immediately close
     const t = setTimeout(() => {
-      document.addEventListener('mousedown', onDocClick);
-      document.addEventListener('keydown', onEsc);
+      document.addEventListener('mousedown', onDocDown, true);
+      document.addEventListener('pointerdown', onDocDown, true);
+      document.addEventListener('keydown', onEsc, true);
     }, 0);
     return () => {
       clearTimeout(t);
-      document.removeEventListener('mousedown', onDocClick);
-      document.removeEventListener('keydown', onEsc);
+      document.removeEventListener('mousedown', onDocDown, true);
+      document.removeEventListener('pointerdown', onDocDown, true);
+      document.removeEventListener('keydown', onEsc, true);
     };
   }, [open]);
 
@@ -152,21 +158,27 @@ function MultiTargetPopover({
       </button>
       {open && (
         <div
-          className="flex flex-col gap-1.5 ml-4"
+          // Faded backdrop: large rounded corners, blocks bleed-through of
+          // edges/lozenges underneath. `nopan nodrag` keep React Flow from
+          // panning the canvas while interacting with the cluster.
+          className="nopan nodrag flex flex-col gap-1.5 ml-4 p-1.5 rounded-2xl bg-white/85 dark:bg-gray-900/85 backdrop-blur-sm border border-indigo-100 dark:border-indigo-800/60 shadow-md"
           onClick={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
+          onPointerDown={(e) => e.stopPropagation()}
         >
           {pairs.map((pair, rowIdx) => (
             <div key={rowIdx} className="flex items-center gap-1.5">
               {pair.map((target) => (
                 <button
                   key={target}
-                  className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 text-[10px] font-medium border border-indigo-200 dark:border-indigo-700 hover:bg-indigo-200 dark:hover:bg-indigo-800/50 transition-colors whitespace-nowrap shadow-sm font-mono"
+                  className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 text-[10px] font-medium border border-indigo-200 dark:border-indigo-700 hover:bg-indigo-200 dark:hover:bg-indigo-800/50 transition-colors whitespace-nowrap shadow-sm"
                   onClick={(e) => {
                     e.stopPropagation();
                     onSelect(target);
                   }}
                   title={`Focus on ${target}`}
                 >
+                  <ArrowRight className="w-2.5 h-2.5" />
                   {target}
                 </button>
               ))}
@@ -287,7 +299,7 @@ function FieldRow({
       {orphanedTargets.length > 0 && onReferenceClick && (
         orphanedTargets.length <= 2 ? (
           <div className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-[calc(100%+8px)] z-10 flex items-center gap-1">
-            {orphanedTargets.map((target, i) => (
+            {orphanedTargets.map((target) => (
               <button
                 key={target}
                 className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 text-[10px] font-medium border border-indigo-200 dark:border-indigo-700 hover:bg-indigo-200 dark:hover:bg-indigo-800/50 transition-colors whitespace-nowrap shadow-sm"
@@ -297,7 +309,7 @@ function FieldRow({
                 }}
                 title={`Focus on ${target}`}
               >
-                {i === 0 && <ArrowRight className="w-2.5 h-2.5" />}
+                <ArrowRight className="w-2.5 h-2.5" />
                 {target}
               </button>
             ))}
