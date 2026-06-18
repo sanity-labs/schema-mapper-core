@@ -421,6 +421,7 @@ export function ExportDropdown({ graphRef, context, types, onExport, extraMenuIt
             name: t.name,
             ...(t.title ? { title: t.title } : {}),
             documentCount: t.documentCount,
+            ...(t.studioTypeRaw ? { studioTypeRaw: t.studioTypeRaw } : {}),
             fields: t.fields.map(f => ({
               name: f.name,
               ...(f.title ? { title: f.title } : {}),
@@ -432,6 +433,8 @@ export function ExportDropdown({ graphRef, context, types, onExport, extraMenuIt
               } : {}),
               ...(f.isArray ? { isArray: true } : {}),
               ...(f.isInlineObject ? { isInlineObject: true, referenceTo: f.referenceTo } : {}),
+              ...(f.isFlattenedRef ? { isFlattenedRef: true } : {}),
+              ...(f.studioFieldRaw ? { studioFieldRaw: f.studioFieldRaw } : {}),
             })),
           })),
           displaySettings: Object.keys(displaySettings).length > 0 ? displaySettings : undefined,

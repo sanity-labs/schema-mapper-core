@@ -19,6 +19,22 @@ export type DiscoveredField = {
   crossDatasetProjectId?: string  // Raw project ID for global refs (before display name resolution)
   crossDatasetTooltip?: string
   crossDatasetResourceType?: 'dataset' | 'media-library' | string  // From deployed schema resourceType field
+  /**
+   * True when this field was synthesised by the canvas's nested-object
+   * descent (e.g. `entries[].patterns`). These entries exist only to surface
+   * deep references in the graph; they are NOT a real top-level field on the
+   * parent document and must be skipped by exporters that produce
+   * round-trippable schema source.
+   */
+  isFlattenedRef?: boolean
+  /**
+   * The raw Studio field definition this entry was parsed from, when
+   * available (deployed-schema source only). Carries the full original
+   * shape including `of`, `fields`, `to`, `options`, `validation`, etc., so
+   * exporters can round-trip without losing nested structure.
+   * Omitted for inferred schemas and for flattened synthetic entries.
+   */
+  studioFieldRaw?: unknown
 }
 
 export type DiscoveredType = {
@@ -26,4 +42,11 @@ export type DiscoveredType = {
   title?: string
   documentCount: number
   fields: DiscoveredField[]
+  /**
+   * The raw Studio schema entry this type was parsed from, when available
+   * (deployed-schema source only). Carries the full document/object
+   * definition including `type`, `preview`, `liveEdit`, `fieldsets`, etc.
+   * Omitted for inferred schemas.
+   */
+  studioTypeRaw?: unknown
 }

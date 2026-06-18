@@ -29,6 +29,155 @@ function typeVarName(name: string): string {
   return name.endsWith('Type') || name.endsWith('type') ? name : `${name}Type`
 }
 
+// ---- Round-trip generator (from raw Studio shape) ----
+
+/**
+ * Pretty-print a JSON-ish value as TypeScript source. Strings use single
+ * quotes; arrays and objects are emitted with the indentation passed in.
+ * Used by `formatStudioRaw` to round-trip deployed-schema entries back into
+ * Studio source.
+ */
+function formatJSONValue(value: unknown, indent: string): string {
+  if (value === null) return 'null'
+  if (value === undefined) return 'undefined'
+  if (typeof value === 'string') return `'${value.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
+  if (Array.isArray(value)) {
+    if (value.length === 0) return '[]'
+    // Compact arrays where every item is a small primitive or single-key object
+    const allCompact = value.every((item) => {
+      if (item === null || typeof item !== 'object') return true
+      const keys = Object.keys(item as object)
+      if (keys.length !== 1) return false
+      const v = (item as Record<string, unknown>)[keys[0]]
+      return v === null || typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean'
+    })
+    if (allCompact && value.length <= 4) {
+      return `[${value.map((item) => formatJSONValue(item, indent)).join(', ')}]`
+    }
+    const inner = indent + '  '
+    const items = value.map((item) => `${inner}${formatJSONValue(item, inner)}`)
+    return `[\n${items.join(',\n')},\n${indent}]`
+  }
+  if (typeof value === 'object') {
+    return formatObjectLiteral(value as Record<string, unknown>, indent)
+  }
+  return 'null'
+}
+
+function formatObjectLiteral(obj: Record<string, unknown>, indent: string): string {
+  const keys = Object.keys(obj)
+  if (keys.length === 0) return '{}'
+  // Compact short single-key objects like `{type: 'foo'}` onto one line.
+  if (keys.length === 1) {
+    const k = keys[0]
+    const v = obj[k]
+    if (v === null || typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') {
+      return `{${formatPropertyKey(k)}: ${formatJSONValue(v, indent)}}`
+    }
+  }
+  const inner = indent + '  '
+  const lines = keys.map((k) => `${inner}${formatPropertyKey(k)}: ${formatJSONValue(obj[k], inner)}`)
+  return `{\n${lines.join(',\n')},\n${indent}}`
+}
+
+function formatPropertyKey(key: string): string {
+  // Bare identifier when possible, otherwise quoted
+  return /^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(key) ? key : `'${key.replace(/'/g, "\\'")}'`
+}
+
+/**
+ * Strip system fields (`_key`, `_type`) that the deployed-schema format
+ * may include but that aren't valid in Studio source.
+ */
+function cleanStudioObject(obj: unknown): unknown {
+  if (obj === null || obj === undefined) return obj
+  if (Array.isArray(obj)) return obj.map(cleanStudioObject)
+  if (typeof obj !== 'object') return obj
+  const src = obj as Record<string, unknown>
+  const out: Record<string, unknown> = {}
+  for (const k of Object.keys(src)) {
+    // Strip system fields that aren't valid in source
+    if (k === '_key' || k === '_type') continue
+    out[k] = cleanStudioObject(src[k])
+  }
+  return out
+}
+
+/**
+ * Wrap an array member's object literal in `defineArrayMember(...)`.
+ */
+function wrapDefineArrayMember(rawMember: unknown, indent: string): string {
+  const cleaned = cleanStudioObject(rawMember) as Record<string, unknown>
+  return `defineArrayMember(${formatStudioBody(cleaned, indent)})`
+}
+
+/**
+ * Generate `defineType({...})` source for a document type using its raw
+ * Studio shape. Wraps each top-level field in `defineField` and each
+ * `array.of` member in `defineArrayMember` for that idiomatic Sanity feel.
+ */
+function generateTypeFromRaw(rawType: unknown): string {
+  const cleaned = cleanStudioObject(rawType) as Record<string, unknown>
+  const lines: string[] = []
+  const varName = typeVarName(String(cleaned.name))
+  lines.push(`export const ${varName} = defineType({`)
+  for (const k of Object.keys(cleaned)) {
+    if (k === 'fields') {
+      lines.push(`  fields: [`)
+      const fields = (cleaned.fields as unknown[]) || []
+      for (const f of fields) {
+        lines.push(`    ${wrapDefineFieldRecursive(f, '    ')},`)
+      }
+      lines.push(`  ],`)
+    } else {
+      lines.push(`  ${formatPropertyKey(k)}: ${formatJSONValue(cleaned[k], '  ')},`)
+    }
+  }
+  lines.push(`})`)
+  return lines.join('\n')
+}
+
+/**
+ * Like `wrapDefineField` but recurses into nested `array.of` (calling
+ * `defineArrayMember`) and nested `fields` (calling `defineField`). This is
+ * what makes `entries: { of: [{ type: 'object', fields: [...] }] }`
+ * round-trip with idiomatic helpers all the way down.
+ */
+function wrapDefineFieldRecursive(rawField: unknown, indent: string): string {
+  const cleaned = cleanStudioObject(rawField) as Record<string, unknown>
+  return `defineField(${formatStudioBody(cleaned, indent)})`
+}
+
+function formatStudioBody(obj: Record<string, unknown>, indent: string): string {
+  const inner = indent + '  '
+  const keys = Object.keys(obj)
+  if (keys.length === 0) return '{}'
+  const lines: string[] = []
+  for (const k of keys) {
+    const v = obj[k]
+    if (k === 'fields' && Array.isArray(v)) {
+      const fieldLines = v.map((f) => `${inner}  ${wrapDefineFieldRecursive(f, inner + '  ')}`)
+      lines.push(`${inner}fields: [\n${fieldLines.join(',\n')},\n${inner}]`)
+    } else if (k === 'of' && Array.isArray(v)) {
+      const memberLines = v.map((m) => {
+        // If the array member is an object literal with `type`+`fields`/`to`/etc, wrap as defineArrayMember.
+        // Simple primitive members like `{type: 'string'}` also benefit from the wrap for consistency.
+        if (m && typeof m === 'object') {
+          return `${inner}  ${wrapDefineArrayMember(m, inner + '  ')}`
+        }
+        return `${inner}  ${formatJSONValue(m, inner + '  ')}`
+      })
+      lines.push(`${inner}of: [\n${memberLines.join(',\n')},\n${inner}]`)
+    } else {
+      lines.push(`${inner}${formatPropertyKey(k)}: ${formatJSONValue(v, inner)}`)
+    }
+  }
+  return `{\n${lines.join(',\n')},\n${indent}}`
+}
+
+// ---- Synthetic generator (fallback when raw shape isn't available) ----
+
 /** Generate the field definition code string for a single field */
 function generateFieldCode(field: DiscoveredField, indent: string): string {
   const title = field.title || camelToTitle(field.name)
@@ -109,6 +258,16 @@ function generateFieldCode(field: DiscoveredField, indent: string): string {
 
 /** Generate the full defineType code for a single type */
 function generateTypeCode(type: DiscoveredType): string {
+  // Round-trip from raw Studio shape when available (deployed schema).
+  // This preserves nested `array.of`, `fields`, `to`, `options`, etc.
+  // exactly as the customer's Studio defined them.
+  if (type.studioTypeRaw) {
+    return generateTypeFromRaw(type.studioTypeRaw)
+  }
+
+  // Synthetic fallback for inferred schemas (or future deployed types that
+  // somehow lack the raw shape). Skip flattened synthetic entries — they
+  // aren't real top-level fields.
   const varName = typeVarName(type.name)
   const title = type.title || camelToTitle(type.name)
   const lines: string[] = []
@@ -120,6 +279,7 @@ function generateTypeCode(type: DiscoveredType): string {
   lines.push(`  fields: [`)
 
   for (const field of type.fields) {
+    if (field.isFlattenedRef) continue
     lines.push(generateFieldCode(field, '    '))
   }
 
