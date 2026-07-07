@@ -1247,7 +1247,13 @@ function SchemaGraphInner({
     setLayoutApplied(false)
   }, [types, setNodes, setEdges])
 
-  // Apply ELK layout once nodes have been measured
+  // Apply ELK layout once nodes have been measured.
+  //
+  // "original" layout uses either curatedActive.positions (when a curated
+  // layout is active) or the outer initialPositions (Submitted). curated
+  // wins when both are set.
+  const effectiveOriginalPositions = curatedActive?.positions || initialPositions
+
   const applyLayout = useCallback(async (
     currentNodes: SchemaNode_RF[],
     currentEdges: SchemaEdge[],
@@ -1258,7 +1264,7 @@ function SchemaGraphInner({
     setIsLayouting(true)
     try {
       let layoutedNodes: SchemaNode_RF[]
-      if (layout === 'original' && initialPositions && Object.keys(initialPositions).length > 0) {
+      if (layout === 'original' && effectiveOriginalPositions && Object.keys(effectiveOriginalPositions).length > 0) {
         // When initialFocusState is set, filter to neighbourhood subset
         let nodesToLayout = currentNodes
         let edgesToSet = currentEdges
@@ -1268,10 +1274,10 @@ function SchemaGraphInner({
           edgesToSet = currentEdges.filter(e => neighbourhood.has(e.source) && neighbourhood.has(e.target))
           setEdges(edgesToSet as any)
         }
-        // Restore customer's original node positions
+        // Restore stored positions verbatim
         layoutedNodes = nodesToLayout.map(n => ({
           ...n,
-          position: initialPositions[n.id] || n.position,
+          position: effectiveOriginalPositions[n.id] || n.position,
         }))
       } else if (layout === 'dagre') {
         const result = getDagreLayout(currentNodes, currentEdges, currentSpacing)
@@ -1293,7 +1299,7 @@ function SchemaGraphInner({
     } finally {
       setIsLayouting(false)
     }
-  }, [setNodes, setEdges, fitView, initialPositions, initialFocusState, types])
+  }, [setNodes, setEdges, fitView, effectiveOriginalPositions, initialFocusState, types])
 
   const debouncedApplyLayout = useMemo(
     () => debounce(
@@ -1322,80 +1328,48 @@ function SchemaGraphInner({
 
   // ---- Curated layout: react to activation/deactivation and view changes ----
   //
-  // When curatedActive is set (or its id/viewKey changes), snap all nodes to
-  // the stored positions verbatim — same shape as the "original" (Submitted)
-  // code path. When curatedActive becomes null (user picked "leave for algo"
-  // in the overwrite dialog), fall back to the current layoutType and
-  // re-run its algorithm on the full graph.
+  // When curatedActive is set (or changes id/viewKey), force layout='original'
+  // and reset layoutApplied — the initial-layout effect re-runs, calling
+  // applyLayout('original', ...) which reads effectiveOriginalPositions and
+  // snaps to the curated positions. Same code path as Submitted.
+  //
+  // When curatedActive is cleared, restore the previously-selected algo
+  // from localStorage (which the caller may have just written) or fall back
+  // to a sensible default.
   const curatedActiveId = curatedActive?.id ?? null
   const curatedActiveViewKey = curatedActive?.viewKey ?? null
-  const curatedPositionsSig = curatedActive
-    ? Object.keys(curatedActive.positions).length + '|' + JSON.stringify(Object.keys(curatedActive.positions).sort().slice(0, 5))
-    : ''
   const prevCuratedIdRef = useRef<string | null>(null)
 
   useEffect(() => {
-    if (!layoutApplied || !nodesInitialized) return
-    const nextId = curatedActiveId
-    const prevId = prevCuratedIdRef.current
-    prevCuratedIdRef.current = nextId
+    const prev = prevCuratedIdRef.current
+    prevCuratedIdRef.current = curatedActiveId
 
     if (curatedActive) {
-      // Snap nodes to curated positions (verbatim, no algo).
-      setNodes((prev) =>
-        prev.map((n) => {
-          const p = curatedActive.positions[n.id]
-          return p ? {...n, position: {x: p.x, y: p.y}} : n
-        }),
-      )
       // Restore stored edge style if it differs.
       if (edgeStyleRef.current !== curatedActive.edgeStyle) {
         setEdgeStyle(curatedActive.edgeStyle)
         edgeStyleRef.current = curatedActive.edgeStyle
-        setEdges((eds) => eds.map((e) => ({...e, type: 'floating', data: {...e.data, edgeStyle: curatedActive.edgeStyle}})))
       }
-      // Ensure the layout selector shows 'original'-ish state (positions
-      // applied verbatim). We don't clobber layoutType — it stays whatever
-      // the user last picked as a fallback for when they leave curated mode.
-      requestAnimationFrame(() => fitView({padding: 0.15, duration: 300}))
-    } else if (prevId) {
-      // Curated was just cleared — re-run an algo on the full graph so
-      // whichever algo tab is highlighted actually applies.
-      //
-      // The caller (e.g. the "Leave layout alone — view {algo}" button)
-      // may have just written the desired algo to localStorage; prefer that
-      // over the internal layoutType so we honor the user's just-made choice.
-      let desired: LayoutType = layoutType
+      // Force 'original' + trigger re-layout via layoutApplied=false.
+      setLayoutType('original')
+      setLayoutApplied(false)
+    } else if (prev) {
+      // Curated cleared — pick the algo the caller wants us to run.
+      let target: LayoutType = layoutType
       try {
         const saved = localStorage.getItem('schema-mapper:layoutType') as LayoutType | null
-        if (saved && ['dagre', 'layered', 'force', 'stress', 'original'].includes(saved)) {
-          desired = saved
+        if (saved && ['dagre', 'layered', 'force', 'stress'].includes(saved)) {
+          target = saved
         }
       } catch {}
-      // Fall back to a default algo if we happened to be on 'original' (which
-      // only makes sense when initialPositions exist).
-      const fallback: LayoutType =
-        desired === 'original' && !(initialPositions && Object.keys(initialPositions).length > 0)
-          ? 'force'
-          : desired
-      if (fallback !== layoutType) setLayoutType(fallback)
-
-      const {nodes: rebuiltNodes, edges: rebuiltEdges} = buildNodesAndEdges(
-        types,
-        edgeStyleRef.current,
-        {
-          onCrossDatasetNavigate: onCrossDatasetNavigateRef.current,
-          onMediaLibraryClick: onMediaLibraryClickRef.current,
-          onInaccessibleClick: onInaccessibleClickRef.current,
-          accessibleProjectIds,
-        },
-      )
-      setNodes(rebuiltNodes)
-      setEdges(rebuiltEdges)
-      applyLayout(rebuiltNodes, rebuiltEdges, fallback, spacingMap[fallback])
+      if (target === 'original' && !(initialPositions && Object.keys(initialPositions).length > 0)) {
+        target = 'force'
+      }
+      setLayoutType(target)
+      setLayoutApplied(false)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [curatedActiveId, curatedActiveViewKey, curatedPositionsSig, layoutApplied, nodesInitialized])
+  }, [curatedActiveId, curatedActiveViewKey])
 
   // Re-layout when layout type changes
   const handleLayoutChange = useCallback((newLayout: LayoutType) => {
