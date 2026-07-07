@@ -894,6 +894,14 @@ interface SchemaGraphInnerProps {
   curatedEditable?: boolean
   onCuratedDrag?: (positions: Record<string, {x: number; y: number}>) => void
   onCuratedExitForAlgo?: () => void
+  /**
+   * Imperative focus restore. Whenever restoreFocusVersion changes, the
+   * graph applies `restoreFocus` — non-null enters focus on that (type,
+   * depth); null exits focus. Used to reinstate a curated layout's
+   * last-active focus on re-selection.
+   */
+  restoreFocus?: { typeName: string; depth: 0 | 1 | 2 } | null
+  restoreFocusVersion?: number
 }
 
 function SchemaGraphInner({
@@ -916,6 +924,8 @@ function SchemaGraphInner({
   curatedEditable,
   onCuratedDrag,
   onCuratedExitForAlgo,
+  restoreFocus,
+  restoreFocusVersion,
 }: SchemaGraphInnerProps) {
   const isDark = useDarkMode()
   const { fitView, getViewport, setViewport } = useReactFlow()
@@ -1344,10 +1354,11 @@ function SchemaGraphInner({
     prevCuratedIdRef.current = curatedActiveId
 
     // Layout selection changed (either direction, or between two layouts) —
-    // exit any active focus. Focus is view-scoped within a layout; switching
-    // context resets to the layout's __full view.
+    // exit any active focus properly (rebuild full graph, restore pre-focus
+    // layout). Just calling setFocusState(null) would clear the state var
+    // but leave the subset nodes/edges rendered — half-exited limbo.
     if (prev !== curatedActiveId) {
-      setFocusState(null)
+      handleExitFocusRef.current?.()
     }
 
     if (curatedActive) {
@@ -1376,6 +1387,25 @@ function SchemaGraphInner({
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [curatedActiveId, curatedActiveViewKey])
+
+  // ---- Imperative focus restore (curated layout re-selection) ----
+  //
+  // When `restoreFocusVersion` changes, apply `restoreFocus`. This runs
+  // AFTER the curated-active effect above has already exited any previous
+  // focus, so we start from a clean full-graph state.
+  const prevRestoreVersionRef = useRef<number | undefined>(undefined)
+  useEffect(() => {
+    if (restoreFocusVersion === undefined) return
+    if (prevRestoreVersionRef.current === restoreFocusVersion) return
+    prevRestoreVersionRef.current = restoreFocusVersion
+    if (restoreFocus && handleFocusRef.current) {
+      // Small delay so any layout-selection re-layout can settle first.
+      const t = setTimeout(() => {
+        handleFocusRef.current?.(restoreFocus.typeName, restoreFocus.depth)
+      }, 50)
+      return () => clearTimeout(t)
+    }
+  }, [restoreFocusVersion, restoreFocus])
 
   // Re-layout when layout type changes
   const handleLayoutChange = useCallback((newLayout: LayoutType) => {
@@ -1744,7 +1774,13 @@ export interface SchemaGraphProps {
    * fires INSTEAD of applying the algo. Caller shows a confirm dialog.
    */
   onCuratedExitForAlgo?: () => void
-  /** Slot for a control (e.g. curated-layouts dropdown) rendered inline in the toolbar. */
+  /**
+   * Imperative focus restore. Whenever restoreFocusVersion changes, the
+   * graph applies restoreFocus — non-null enters focus on that (type,
+   * depth); null exits focus.
+   */
+  restoreFocus?: { typeName: string; depth: 0 | 1 | 2 } | null
+  restoreFocusVersion?: number
 }
 
 export function SchemaGraph(props: SchemaGraphProps) {
