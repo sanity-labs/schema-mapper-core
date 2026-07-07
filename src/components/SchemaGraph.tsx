@@ -1202,8 +1202,10 @@ function SchemaGraphInner({
       isSearching,
       visibleTypeCount: nodes.length,
       viewport: viewportRef.current,
+      edgeStyle,
+      spacing,
     })
-  }, [focusState, isSearching, nodes.length, onStateChange])
+  }, [focusState, isSearching, nodes.length, onStateChange, edgeStyle, spacing])
 
   const handleSearchChange = useCallback((query: string) => {
     setSearchQuery(query)
@@ -1672,6 +1674,10 @@ export interface SchemaGraphState {
   isSearching: boolean
   visibleTypeCount: number
   viewport?: { x: number; y: number; zoom: number }
+  /** Current edge style — surfaced so consumers (e.g. curated-layout auto-save) can persist it */
+  edgeStyle?: 'bezier' | 'step' | 'straight'
+  /** Current spacing multiplier — surfaced for curated-layout auto-save */
+  spacing?: number
 }
 
 export interface SchemaGraphProps {
