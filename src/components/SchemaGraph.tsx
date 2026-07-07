@@ -801,7 +801,7 @@ function GraphControls({
   onResetSpacing,
   hasOriginalPositions = false,
   disabled = false,
-  curatedSlot,
+  curatedActive = false,
 }: {
   layout: LayoutType
   onLayoutChange: (layout: LayoutType) => void
@@ -812,8 +812,8 @@ function GraphControls({
   onResetSpacing: () => void
   hasOriginalPositions?: boolean
   disabled?: boolean
-  /** Optional render slot for app-level controls (e.g. curated layouts dropdown) — sits inline after the algo tabs. */
-  curatedSlot?: React.ReactNode
+  /** When true, no algo tab is shown as selected — the app-level curated layout is in charge. */
+  curatedActive?: boolean
 }) {
   const layouts: LayoutType[] = hasOriginalPositions
     ? ['original', 'dagre', 'layered', 'force', 'stress']
@@ -828,11 +828,10 @@ function GraphControls({
             key={l}
             id={`layout-tab-${l}`}
             label={layoutLabels[l]}
-            selected={layout === l}
+            selected={!curatedActive && layout === l}
             onClick={() => onLayoutChange(l)}
           />
         ))}
-        {curatedSlot && <div className="ml-1">{curatedSlot}</div>}
       </div>
       <div className="flex gap-1">
         {edgeStyles.map((s) => (
@@ -895,7 +894,6 @@ interface SchemaGraphInnerProps {
   curatedEditable?: boolean
   onCuratedDrag?: (positions: Record<string, {x: number; y: number}>) => void
   onAlgoOverwriteRequest?: (algo: 'dagre' | 'layered' | 'force' | 'stress') => void
-  curatedSlot?: React.ReactNode
 }
 
 function SchemaGraphInner({
@@ -918,7 +916,6 @@ function SchemaGraphInner({
   curatedEditable,
   onCuratedDrag,
   onAlgoOverwriteRequest,
-  curatedSlot,
 }: SchemaGraphInnerProps) {
   const isDark = useDarkMode()
   const { fitView, getViewport, setViewport } = useReactFlow()
@@ -1548,7 +1545,7 @@ function SchemaGraphInner({
 
   return (
     <div ref={containerRef} className="relative w-full h-full">
-      <GraphControls layout={layoutType} onLayoutChange={handleLayoutChange} edgeStyle={edgeStyle} onEdgeStyleChange={handleEdgeStyleChange} spacing={spacing} onSpacingChange={handleSpacingChange} onResetSpacing={handleResetSpacing} hasOriginalPositions={!!initialPositions && Object.keys(initialPositions).length > 0} disabled={isSearching} curatedSlot={curatedSlot} />
+      <GraphControls layout={layoutType} onLayoutChange={handleLayoutChange} edgeStyle={edgeStyle} onEdgeStyleChange={handleEdgeStyleChange} spacing={spacing} onSpacingChange={handleSpacingChange} onResetSpacing={handleResetSpacing} hasOriginalPositions={!!initialPositions && Object.keys(initialPositions).length > 0} disabled={isSearching} curatedActive={!!curatedActive} />
       {isLayouting && (
         <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10 bg-white/90 dark:bg-gray-900/90 backdrop-blur-sm border rounded-md px-3 py-1 text-xs text-gray-500 dark:text-gray-400">
           Layouting…
@@ -1739,7 +1736,6 @@ export interface SchemaGraphProps {
    */
   onAlgoOverwriteRequest?: (algo: 'dagre' | 'layered' | 'force' | 'stress') => void
   /** Slot for a control (e.g. curated-layouts dropdown) rendered inline in the toolbar. */
-  curatedSlot?: React.ReactNode
 }
 
 export function SchemaGraph(props: SchemaGraphProps) {
