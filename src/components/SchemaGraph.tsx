@@ -893,7 +893,7 @@ interface SchemaGraphInnerProps {
   curatedActive?: SchemaGraphProps['curatedActive']
   curatedEditable?: boolean
   onCuratedDrag?: (positions: Record<string, {x: number; y: number}>) => void
-  onAlgoOverwriteRequest?: (algo: 'dagre' | 'layered' | 'force' | 'stress') => void
+  onCuratedExitForAlgo?: () => void
 }
 
 function SchemaGraphInner({
@@ -915,7 +915,7 @@ function SchemaGraphInner({
   curatedActive,
   curatedEditable,
   onCuratedDrag,
-  onAlgoOverwriteRequest,
+  onCuratedExitForAlgo,
 }: SchemaGraphInnerProps) {
   const isDark = useDarkMode()
   const { fitView, getViewport, setViewport } = useReactFlow()
@@ -1379,10 +1379,12 @@ function SchemaGraphInner({
 
   // Re-layout when layout type changes
   const handleLayoutChange = useCallback((newLayout: LayoutType) => {
-    // Curated intercept: when a curated layout is active, algo taps become
-    // an overwrite request. Caller decides whether to apply/leave/cancel.
-    if (curatedActive && newLayout !== 'original' && onAlgoOverwriteRequest) {
-      onAlgoOverwriteRequest(newLayout as 'dagre' | 'layered' | 'force' | 'stress')
+    // When a curated layout is active, tapping an algo tab exits the layout
+    // and applies the algo. (Simple + expected — users don't want a prompt.)
+    if (curatedActive && newLayout !== 'original' && onCuratedExitForAlgo) {
+      onCuratedExitForAlgo()
+      // Write the chosen algo so the curated-deactivation effect picks it up.
+      try { localStorage.setItem('schema-mapper:layoutType', newLayout) } catch {}
       return
     }
     debouncedApplyLayout.cancel()
@@ -1409,7 +1411,7 @@ function SchemaGraphInner({
     } else {
       applyLayout(nodes as SchemaNode_RF[], edges, newLayout, spacingMap[newLayout])
     }
-  }, [nodes, edges, spacingMap, applyLayout, debouncedApplyLayout, initialEdgeStyle, setEdgeStyle, initialFocusState, focusState, types, setNodes, setEdges, curatedActive, onAlgoOverwriteRequest])
+  }, [nodes, edges, spacingMap, applyLayout, debouncedApplyLayout, initialEdgeStyle, setEdgeStyle, initialFocusState, focusState, types, setNodes, setEdges, curatedActive, onCuratedExitForAlgo])
 
   const handleSpacingChange = useCallback((value: number) => {
     setSpacingMap(prev => {
@@ -1741,7 +1743,7 @@ export interface SchemaGraphProps {
    * When curatedActive is set and the user clicks an algorithm tab, this
    * fires INSTEAD of applying the algo. Caller shows a confirm dialog.
    */
-  onAlgoOverwriteRequest?: (algo: 'dagre' | 'layered' | 'force' | 'stress') => void
+  onCuratedExitForAlgo?: () => void
   /** Slot for a control (e.g. curated-layouts dropdown) rendered inline in the toolbar. */
 }
 
