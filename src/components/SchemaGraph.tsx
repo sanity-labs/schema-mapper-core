@@ -875,7 +875,51 @@ function GraphControls({
 // Inner component (needs ReactFlowProvider ancestor for hooks)
 // ---------------------------------------------------------------------------
 
-function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateChange, fitViewTrigger, initialFocusState, onCrossDatasetNavigate, onMediaLibraryClick, onInaccessibleClick, accessibleProjectIds, pendingFocusType, pendingFocusDepth = 0, onViewportChange, restoreViewport, viewportNudge }: { types: DiscoveredType[]; initialPositions?: Record<string, { x: number; y: number }>; initialEdgeStyle?: EdgeStyle; onStateChange?: (state: SchemaGraphState) => void; fitViewTrigger?: number; initialFocusState?: { typeName: string; depth: 0 | 1 | 2 }; onCrossDatasetNavigate?: (datasetName: string, typeName?: string, sourceTypeName?: string, projectId?: string) => void; onMediaLibraryClick?: (fieldName: string, typeName: string) => void; onInaccessibleClick?: (projectName: string, datasetName: string) => void; accessibleProjectIds?: Set<string>; pendingFocusType?: string | null; pendingFocusDepth?: 0 | 1 | 2; onViewportChange?: (viewport: { x: number; y: number; zoom: number }) => void; restoreViewport?: { x: number; y: number; zoom: number } | null; viewportNudge?: { dy: number; trigger: number } | null }) {
+interface SchemaGraphInnerProps {
+  types: DiscoveredType[]
+  initialPositions?: Record<string, { x: number; y: number }>
+  initialEdgeStyle?: EdgeStyle
+  onStateChange?: (state: SchemaGraphState) => void
+  fitViewTrigger?: number
+  initialFocusState?: { typeName: string; depth: 0 | 1 | 2 }
+  onCrossDatasetNavigate?: (datasetName: string, typeName?: string, sourceTypeName?: string, projectId?: string) => void
+  onMediaLibraryClick?: (fieldName: string, typeName: string) => void
+  onInaccessibleClick?: (projectName: string, datasetName: string) => void
+  accessibleProjectIds?: Set<string>
+  pendingFocusType?: string | null
+  pendingFocusDepth?: 0 | 1 | 2
+  onViewportChange?: (viewport: { x: number; y: number; zoom: number }) => void
+  restoreViewport?: { x: number; y: number; zoom: number } | null
+  viewportNudge?: { dy: number; trigger: number } | null
+  curatedActive?: SchemaGraphProps['curatedActive']
+  curatedEditable?: boolean
+  onCuratedDrag?: (positions: Record<string, {x: number; y: number}>) => void
+  onAlgoOverwriteRequest?: (algo: 'dagre' | 'layered' | 'force' | 'stress') => void
+  curatedSlot?: React.ReactNode
+}
+
+function SchemaGraphInner({
+  types,
+  initialPositions,
+  initialEdgeStyle,
+  onStateChange,
+  fitViewTrigger,
+  initialFocusState,
+  onCrossDatasetNavigate,
+  onMediaLibraryClick,
+  onInaccessibleClick,
+  accessibleProjectIds,
+  pendingFocusType,
+  pendingFocusDepth = 0,
+  onViewportChange,
+  restoreViewport,
+  viewportNudge,
+  curatedActive,
+  curatedEditable,
+  onCuratedDrag,
+  onAlgoOverwriteRequest,
+  curatedSlot,
+}: SchemaGraphInnerProps) {
   const isDark = useDarkMode()
   const { fitView, getViewport, setViewport } = useReactFlow()
   const nodesInitialized = useNodesInitialized()
@@ -1278,6 +1322,12 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
 
   // Re-layout when layout type changes
   const handleLayoutChange = useCallback((newLayout: LayoutType) => {
+    // Curated intercept: when a curated layout is active, algo taps become
+    // an overwrite request. Caller decides whether to apply/leave/cancel.
+    if (curatedActive && newLayout !== 'original' && onAlgoOverwriteRequest) {
+      onAlgoOverwriteRequest(newLayout as 'dagre' | 'layered' | 'force' | 'stress')
+      return
+    }
     debouncedApplyLayout.cancel()
     setLayoutType(newLayout)
     try { localStorage.setItem('schema-mapper:layoutType', newLayout) } catch {}
@@ -1302,7 +1352,7 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
     } else {
       applyLayout(nodes as SchemaNode_RF[], edges, newLayout, spacingMap[newLayout])
     }
-  }, [nodes, edges, spacingMap, applyLayout, debouncedApplyLayout, initialEdgeStyle, setEdgeStyle, initialFocusState, focusState, types, setNodes, setEdges])
+  }, [nodes, edges, spacingMap, applyLayout, debouncedApplyLayout, initialEdgeStyle, setEdgeStyle, initialFocusState, focusState, types, setNodes, setEdges, curatedActive, onAlgoOverwriteRequest])
 
   const handleSpacingChange = useCallback((value: number) => {
     setSpacingMap(prev => {
@@ -1445,7 +1495,7 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
 
   return (
     <div ref={containerRef} className="relative w-full h-full">
-      <GraphControls layout={layoutType} onLayoutChange={handleLayoutChange} edgeStyle={edgeStyle} onEdgeStyleChange={handleEdgeStyleChange} spacing={spacing} onSpacingChange={handleSpacingChange} onResetSpacing={handleResetSpacing} hasOriginalPositions={!!initialPositions && Object.keys(initialPositions).length > 0} disabled={isSearching} />
+      <GraphControls layout={layoutType} onLayoutChange={handleLayoutChange} edgeStyle={edgeStyle} onEdgeStyleChange={handleEdgeStyleChange} spacing={spacing} onSpacingChange={handleSpacingChange} onResetSpacing={handleResetSpacing} hasOriginalPositions={!!initialPositions && Object.keys(initialPositions).length > 0} disabled={isSearching} curatedSlot={curatedSlot} />
       {isLayouting && (
         <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10 bg-white/90 dark:bg-gray-900/90 backdrop-blur-sm border rounded-md px-3 py-1 text-xs text-gray-500 dark:text-gray-400">
           Layouting…
@@ -1489,6 +1539,14 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
         nodes={nodes}
         edges={edges}
         onNodesChange={onNodesChange}
+        onNodeDragStop={curatedActive && curatedEditable && onCuratedDrag ? () => {
+          // Snapshot all current node positions after user finishes a drag.
+          // Called once per drag-stop (React Flow guarantees this).
+          const positions: Record<string, {x: number; y: number}> = {}
+          for (const n of nodes) positions[n.id] = {x: n.position.x, y: n.position.y}
+          onCuratedDrag(positions)
+        } : undefined}
+        nodesDraggable={curatedActive ? !!curatedEditable : true}
         onEdgesChange={onEdgesChange}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
@@ -1595,10 +1653,40 @@ export interface SchemaGraphProps {
   restoreViewport?: { x: number; y: number; zoom: number } | null
   /** Instant viewport Y nudge (for nav collapse/expand center compensation). Increment trigger to apply. */
   viewportNudge?: { dy: number; trigger: number } | null
+
+  // --- Curated Layouts integration (schema-mapper app-level) ---
+  /**
+   * When set, the graph is displaying a stored curated layout. Positions
+   * come from `curatedActive.positions` and are applied verbatim (no
+   * algorithm). `viewKey` distinguishes the full-graph vs focused sub-views
+   * within the same curated-layout doc.
+   */
+  curatedActive?: {
+    id: string
+    viewKey: string
+    positions: Record<string, {x: number; y: number}>
+    edgeStyle: 'bezier' | 'step' | 'straight'
+    spacing: number
+  } | null
+  /** When true (and curatedActive set), user can drag nodes; positions fire via onCuratedDrag. */
+  curatedEditable?: boolean
+  /**
+   * Fires (debounced upstream) when the user drags nodes on an editable
+   * curated layout. Called with the current position map for ALL nodes on
+   * screen. The caller writes it to the appropriate viewKey.
+   */
+  onCuratedDrag?: (positions: Record<string, {x: number; y: number}>) => void
+  /**
+   * When curatedActive is set and the user clicks an algorithm tab, this
+   * fires INSTEAD of applying the algo. Caller shows a confirm dialog.
+   */
+  onAlgoOverwriteRequest?: (algo: 'dagre' | 'layered' | 'force' | 'stress') => void
+  /** Slot for a control (e.g. curated-layouts dropdown) rendered inline in the toolbar. */
+  curatedSlot?: React.ReactNode
 }
 
-export function SchemaGraph({ types, initialPositions, initialEdgeStyle, onStateChange, fitViewTrigger, initialFocusState, onCrossDatasetNavigate, onMediaLibraryClick, onInaccessibleClick, accessibleProjectIds, pendingFocusType, pendingFocusDepth, onViewportChange, restoreViewport, viewportNudge }: SchemaGraphProps) {
-  if (types.length === 0) {
+export function SchemaGraph(props: SchemaGraphProps) {
+  if (props.types.length === 0) {
     return (
       <div className="flex items-center justify-center w-full h-full text-gray-400 text-sm">
         No schema types discovered yet.
@@ -1609,7 +1697,7 @@ export function SchemaGraph({ types, initialPositions, initialEdgeStyle, onState
   return (
     <div style={{ width: '100%', height: '100%', minHeight: 500 }}>
       <ReactFlowProvider>
-        <SchemaGraphInner types={types} initialPositions={initialPositions} initialEdgeStyle={initialEdgeStyle} onStateChange={onStateChange} fitViewTrigger={fitViewTrigger} initialFocusState={initialFocusState} onCrossDatasetNavigate={onCrossDatasetNavigate} onMediaLibraryClick={onMediaLibraryClick} onInaccessibleClick={onInaccessibleClick} accessibleProjectIds={accessibleProjectIds} pendingFocusType={pendingFocusType} pendingFocusDepth={pendingFocusDepth} onViewportChange={onViewportChange} restoreViewport={restoreViewport} viewportNudge={viewportNudge} />
+        <SchemaGraphInner {...props} />
       </ReactFlowProvider>
     </div>
   )
