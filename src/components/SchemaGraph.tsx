@@ -1343,6 +1343,13 @@ function SchemaGraphInner({
     const prev = prevCuratedIdRef.current
     prevCuratedIdRef.current = curatedActiveId
 
+    // Layout selection changed (either direction, or between two layouts) —
+    // exit any active focus. Focus is view-scoped within a layout; switching
+    // context resets to the layout's __full view.
+    if (prev !== curatedActiveId) {
+      setFocusState(null)
+    }
+
     if (curatedActive) {
       // Restore stored edge style if it differs.
       if (edgeStyleRef.current !== curatedActive.edgeStyle) {
