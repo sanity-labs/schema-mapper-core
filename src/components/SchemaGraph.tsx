@@ -801,6 +801,7 @@ function GraphControls({
   onResetSpacing,
   hasOriginalPositions = false,
   disabled = false,
+  curatedSlot,
 }: {
   layout: LayoutType
   onLayoutChange: (layout: LayoutType) => void
@@ -811,6 +812,8 @@ function GraphControls({
   onResetSpacing: () => void
   hasOriginalPositions?: boolean
   disabled?: boolean
+  /** Optional render slot for app-level controls (e.g. curated layouts dropdown) — sits inline after the algo tabs. */
+  curatedSlot?: React.ReactNode
 }) {
   const layouts: LayoutType[] = hasOriginalPositions
     ? ['original', 'dagre', 'layered', 'force', 'stress']
@@ -819,7 +822,7 @@ function GraphControls({
 
   return (
     <div className={`absolute top-3 right-3 z-10 flex flex-col items-end gap-2 bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm rounded-lg p-2.5 transition-opacity ${disabled ? 'opacity-40 pointer-events-none' : ''}`}>
-      <div className="flex gap-1">
+      <div className="flex gap-1 items-center">
         {layouts.map((l) => (
           <Tab
             key={l}
@@ -829,6 +832,7 @@ function GraphControls({
             onClick={() => onLayoutChange(l)}
           />
         ))}
+        {curatedSlot && <div className="ml-1">{curatedSlot}</div>}
       </div>
       <div className="flex gap-1">
         {edgeStyles.map((s) => (
