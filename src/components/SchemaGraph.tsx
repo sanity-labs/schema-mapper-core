@@ -1682,13 +1682,15 @@ function SchemaGraphInner({
   return (
     <div ref={containerRef} className={`relative w-full h-full ${curatedActive && !curatedEditable ? 'schema-graph-locked' : ''}`}>
       <style>{`
-        .schema-graph-locked .react-flow__node,
-        .schema-graph-locked .react-flow__node * {
+        /* Locked curated layout: node body shows the "no-touch" cursor,
+           but reference-link rows and cross-dataset/media/inaccessible
+           lozenges keep their pointer cursor so navigation away from
+           the type still works. */
+        .schema-graph-locked .react-flow__node {
           cursor: not-allowed !important;
         }
-        /* Lozenges (cross-dataset refs, media library, inaccessible project markers)
-           stay clickable — they navigate away from the schema type, which is a valid
-           interaction even when the layout is locked. */
+        .schema-graph-locked .react-flow__node .schema-clickable,
+        .schema-graph-locked .react-flow__node .schema-clickable *,
         .schema-graph-locked .react-flow__node .cursor-pointer,
         .schema-graph-locked .react-flow__node .cursor-pointer * {
           cursor: pointer !important;
