@@ -1382,6 +1382,16 @@ function SchemaGraphInner({
       if (target === 'original' && !(initialPositions && Object.keys(initialPositions).length > 0)) {
         target = 'force'
       }
+      // Also restore the user's pre-layout edge-style preference — otherwise
+      // the layout's stored edgeStyle sticks around in state (and in the
+      // GraphControls tab UI) even though we're no longer in that layout.
+      try {
+        const savedStyle = localStorage.getItem('schema-mapper:edgeStyle') as EdgeStyle | null
+        if (savedStyle && ['bezier', 'step', 'straight'].includes(savedStyle) && savedStyle !== edgeStyleRef.current) {
+          setEdgeStyle(savedStyle)
+          edgeStyleRef.current = savedStyle
+        }
+      } catch {}
       setLayoutType(target)
       setLayoutApplied(false)
     }
