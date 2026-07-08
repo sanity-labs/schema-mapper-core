@@ -894,6 +894,8 @@ interface SchemaGraphInnerProps {
   curatedEditable?: boolean
   onCuratedDrag?: (positions: Record<string, {x: number; y: number}>) => void
   onCuratedExitForAlgo?: () => void
+  /** When curated is active + locked, called if the user clicks/interacts with a node. Consumer typically opens an "unlock this layout?" dialog. */
+  onLockedInteraction?: () => void
   /**
    * Imperative focus restore. Whenever restoreFocusVersion changes, the
    * graph applies `restoreFocus` — non-null enters focus on that (type,
@@ -924,6 +926,7 @@ function SchemaGraphInner({
   curatedEditable,
   onCuratedDrag,
   onCuratedExitForAlgo,
+  onLockedInteraction,
   restoreFocus,
   restoreFocusVersion,
 }: SchemaGraphInnerProps) {
@@ -1593,7 +1596,13 @@ function SchemaGraphInner({
   }, [focusState, handleExitFocus])
 
   return (
-    <div ref={containerRef} className="relative w-full h-full">
+    <div ref={containerRef} className={`relative w-full h-full ${curatedActive && !curatedEditable ? 'schema-graph-locked' : ''}`}>
+      <style>{`
+        .schema-graph-locked .react-flow__node,
+        .schema-graph-locked .react-flow__node * {
+          cursor: not-allowed !important;
+        }
+      `}</style>
       <GraphControls layout={layoutType} onLayoutChange={handleLayoutChange} edgeStyle={edgeStyle} onEdgeStyleChange={handleEdgeStyleChange} spacing={spacing} onSpacingChange={handleSpacingChange} onResetSpacing={handleResetSpacing} hasOriginalPositions={!!initialPositions && Object.keys(initialPositions).length > 0} disabled={isSearching} curatedActive={!!curatedActive} />
       {isLayouting && (
         <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10 bg-white/90 dark:bg-gray-900/90 backdrop-blur-sm border rounded-md px-3 py-1 text-xs text-gray-500 dark:text-gray-400">
@@ -1664,6 +1673,12 @@ function SchemaGraphInner({
           animated: false,
         }}
         onNodeClick={(event, node) => {
+          // Curated layout is active but locked — clicking a node should
+          // prompt to unlock instead of opening the focus menu.
+          if (curatedActive && !curatedEditable && onLockedInteraction) {
+            onLockedInteraction()
+            return
+          }
           const bounds = containerRef.current?.getBoundingClientRect()
           if (!bounds) return
           setContextMenu({
@@ -1674,6 +1689,10 @@ function SchemaGraphInner({
         }}
         onNodeContextMenu={(event, node) => {
           event.preventDefault()
+          if (curatedActive && !curatedEditable && onLockedInteraction) {
+            onLockedInteraction()
+            return
+          }
           const bounds = containerRef.current?.getBoundingClientRect()
           if (!bounds) return
           setContextMenu({
@@ -1784,6 +1803,8 @@ export interface SchemaGraphProps {
    * fires INSTEAD of applying the algo. Caller shows a confirm dialog.
    */
   onCuratedExitForAlgo?: () => void
+  /** When curated is active + locked, called if the user clicks/interacts with a node. Consumer typically opens an "unlock this layout?" dialog. */
+  onLockedInteraction?: () => void
   /**
    * Imperative focus restore. Whenever restoreFocusVersion changes, the
    * graph applies restoreFocus — non-null enters focus on that (type,
