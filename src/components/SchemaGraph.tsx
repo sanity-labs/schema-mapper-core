@@ -1559,6 +1559,10 @@ function SchemaGraphInner({
 
   // Focus mode handlers
   const handleFocus = useCallback((typeName: string, depth: 0 | 1 | 2) => {
+    // Cancel any in-flight applyLayout — its late setNodes would clobber
+    // the focused subset we're about to render. Race-critical on large
+    // graphs where ELK takes longer than the focus-restore setTimeout.
+    applyLayoutGenRef.current++
     // If searching, clear search and rebuild full graph first so pre-focus state is the full graph
     if (searchQuery.trim()) {
       setSearchQuery('')
