@@ -1268,6 +1268,13 @@ function SchemaGraphInner({
   // wins when both are set.
   const effectiveOriginalPositions = curatedActive?.positions || initialPositions
 
+  // Keep a ref so applyLayout closures always read the LATEST positions —
+  // otherwise a rapid layout→layout switch can fire applyLayout with the
+  // previous layout's positions in closure (setLayoutApplied(true) locks
+  // out the re-fire that would have picked up fresh positions).
+  const effectivePositionsRef = useRef(effectiveOriginalPositions)
+  effectivePositionsRef.current = effectiveOriginalPositions
+
   const applyLayout = useCallback(async (
     currentNodes: SchemaNode_RF[],
     currentEdges: SchemaEdge[],
@@ -1278,7 +1285,9 @@ function SchemaGraphInner({
     setIsLayouting(true)
     try {
       let layoutedNodes: SchemaNode_RF[]
-      if (layout === 'original' && effectiveOriginalPositions && Object.keys(effectiveOriginalPositions).length > 0) {
+      // Read positions fresh from the ref, not the closure. See ref decl above.
+      const originalPositions = effectivePositionsRef.current
+      if (layout === 'original' && originalPositions && Object.keys(originalPositions).length > 0) {
         // When initialFocusState is set, filter to neighbourhood subset
         let nodesToLayout = currentNodes
         let edgesToSet = currentEdges
@@ -1291,7 +1300,7 @@ function SchemaGraphInner({
         // Restore stored positions verbatim
         layoutedNodes = nodesToLayout.map(n => ({
           ...n,
-          position: effectiveOriginalPositions[n.id] || n.position,
+          position: originalPositions[n.id] || n.position,
         }))
       } else if (layout === 'dagre') {
         const result = getDagreLayout(currentNodes, currentEdges, currentSpacing)
@@ -1313,7 +1322,7 @@ function SchemaGraphInner({
     } finally {
       setIsLayouting(false)
     }
-  }, [setNodes, setEdges, fitView, effectiveOriginalPositions, initialFocusState, types])
+  }, [setNodes, setEdges, fitView, initialFocusState, types])
 
   const debouncedApplyLayout = useMemo(
     () => debounce(
@@ -1402,6 +1411,29 @@ function SchemaGraphInner({
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [curatedActiveId, curatedActiveViewKey, curatedRestoreVersion])
+
+  // ---- Curated positions changed (parent updated activeView after focus) ----
+  //
+  // When curated is active and focus emits upward, the parent's viewKey
+  // updates, activeView switches, and curatedActive.positions may have a
+  // completely different set of positions. We need to re-apply them.
+  // We detect this by watching a fingerprint of the positions themselves.
+  const curatedPositionsSig = curatedActive
+    ? Object.entries(curatedActive.positions).map(([k, v]) => `${k}:${v.x},${v.y}`).sort().join('|')
+    : ''
+  const prevCuratedPositionsSigRef = useRef(curatedPositionsSig)
+  useEffect(() => {
+    if (!curatedActive) {
+      prevCuratedPositionsSigRef.current = ''
+      return
+    }
+    if (prevCuratedPositionsSigRef.current === curatedPositionsSig) return
+    prevCuratedPositionsSigRef.current = curatedPositionsSig
+    // Re-fire layout apply with the fresh positions (read via ref inside applyLayout).
+    setLayoutType('original')
+    setLayoutApplied(false)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [curatedPositionsSig])
 
   // ---- Imperative focus restore (curated layout re-selection) ----
   //
@@ -1492,7 +1524,9 @@ function SchemaGraphInner({
       preFocusLayoutRef.current = { layout: layoutType, spacing: spacing }
     }
     // If on Submitted layout, switch to force for focus (positions don't apply to subsets)
-    if (layoutType === 'original') {
+    // EXCEPTION: when curated is active, curatedActive.positions is view-specific
+    // (keyed by focus signature), so 'original' can restore the correct subset positions.
+    if (layoutType === 'original' && !curatedActive) {
       setLayoutType('force')
       searchLayoutOverrideRef.current = { layout: 'force', spacing: DEFAULT_SPACING.force }
     }
@@ -1519,7 +1553,7 @@ function SchemaGraphInner({
 
     // Re-layout the subset
     setLayoutApplied(false)
-  }, [types, nodes, edges, focusState, searchQuery, layoutType, spacing, setNodes, setEdges])
+  }, [types, nodes, edges, focusState, searchQuery, layoutType, spacing, setNodes, setEdges, curatedActive])
   handleFocusRef.current = handleFocus
 
   // Ref-stable callback for reference navigation (avoids circular deps)
