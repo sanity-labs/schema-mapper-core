@@ -891,6 +891,7 @@ interface SchemaGraphInnerProps {
   restoreViewport?: { x: number; y: number; zoom: number } | null
   viewportNudge?: { dy: number; trigger: number } | null
   curatedActive?: SchemaGraphProps['curatedActive']
+  curatedRestoreVersion?: number
   curatedEditable?: boolean
   onCuratedDrag?: (positions: Record<string, {x: number; y: number}>) => void
   onCuratedExitForAlgo?: () => void
@@ -923,6 +924,7 @@ function SchemaGraphInner({
   restoreViewport,
   viewportNudge,
   curatedActive,
+  curatedRestoreVersion,
   curatedEditable,
   onCuratedDrag,
   onCuratedExitForAlgo,
@@ -1399,7 +1401,7 @@ function SchemaGraphInner({
       setLayoutApplied(false)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [curatedActiveId, curatedActiveViewKey])
+  }, [curatedActiveId, curatedActiveViewKey, curatedRestoreVersion])
 
   // ---- Imperative focus restore (curated layout re-selection) ----
   //
@@ -1790,6 +1792,13 @@ export interface SchemaGraphProps {
     edgeStyle: 'bezier' | 'step' | 'straight'
     spacing: number
   } | null
+  /**
+   * Version counter that consumers bump when they want the graph to
+   * re-apply the current `curatedActive` snapshot (positions, edge style,
+   * spacing). Used on unlock so that any drift while locked (edge style
+   * changes, etc.) is discarded and the saved state is restored.
+   */
+  curatedRestoreVersion?: number
   /** When true (and curatedActive set), user can drag nodes; positions fire via onCuratedDrag. */
   curatedEditable?: boolean
   /**
