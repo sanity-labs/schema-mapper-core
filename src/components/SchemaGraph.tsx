@@ -1030,6 +1030,9 @@ function SchemaGraphInner({
     typeName: string
     depth: 0 | 1 | 2
   } | null>(null)
+  // Keep the focus ref in sync so ref-based readers (e.g. applyLayout via
+  // resolveCuratedPositions) see the current focus without a re-render.
+  focusStateRef.current = focusState
   // Search/filter state
   const [searchQuery, setSearchQuery] = useState('')
   const allTypesRef = useRef(types)
@@ -1263,17 +1266,52 @@ function SchemaGraphInner({
 
   // Apply ELK layout once nodes have been measured.
   //
-  // "original" layout uses either curatedActive.positions (when a curated
-  // layout is active) or the outer initialPositions (Submitted). curated
-  // wins when both are set.
+  // "original" layout uses either curatedActive (when a curated layout is
+  // active) or the outer initialPositions (Submitted). Curated wins.
+  //
+  // For curated: we read positions from curatedActive.views keyed by our
+  // OWN internal focus state, so a focus change doesn't need a round-trip
+  // through the parent to update positions.
+  const curatedViews = curatedActive?.views
+  const curatedViewsRef = useRef(curatedViews)
+  curatedViewsRef.current = curatedViews
+  const focusStateRef = useRef<{typeName: string; depth: 0 | 1 | 2} | null>(null)
+  // Assigned below once focusState is declared
+  const curatedFallbackPositions = curatedActive?.positions
+  const initialPositionsRef = useRef(initialPositions)
+  initialPositionsRef.current = initialPositions
+  const curatedFallbackPositionsRef = useRef(curatedFallbackPositions)
+  curatedFallbackPositionsRef.current = curatedFallbackPositions
+  const curatedActiveRef = useRef(curatedActive)
+  curatedActiveRef.current = curatedActive
+
+  // Legacy shape used by callers that don't set views (backwards compat)
   const effectiveOriginalPositions = curatedActive?.positions || initialPositions
 
-  // Keep a ref so applyLayout closures always read the LATEST positions —
-  // otherwise a rapid layout→layout switch can fire applyLayout with the
-  // previous layout's positions in closure (setLayoutApplied(true) locks
-  // out the re-fire that would have picked up fresh positions).
   const effectivePositionsRef = useRef(effectiveOriginalPositions)
   effectivePositionsRef.current = effectiveOriginalPositions
+
+  // Compute positions to use right now — internal focus state drives view
+  // key selection when curatedActive.views is provided.
+  const resolveCuratedPositions = useCallback((): Record<string, {x: number; y: number}> | undefined => {
+    const active = curatedActiveRef.current
+    if (!active) return initialPositionsRef.current
+    const views = curatedViewsRef.current
+    if (views) {
+      const fs = focusStateRef.current
+      const viewKey = fs ? `${fs.typeName}:${fs.depth}` : '__full'
+      const v = views[viewKey]
+      if (v) return v.nodePositions
+      // No saved view for this focus — return empty so caller falls back to ELK
+      return undefined
+    }
+    return curatedFallbackPositionsRef.current
+  }, [])
+
+  // Request counter — each applyLayout call takes a token, and only writes
+  // its result back if the token still matches. Guards against async ELK
+  // resolving AFTER a newer applyLayout has already set correct positions.
+  const applyLayoutGenRef = useRef(0)
 
   const applyLayout = useCallback(async (
     currentNodes: SchemaNode_RF[],
@@ -1282,11 +1320,14 @@ function SchemaGraphInner({
     currentSpacing: number,
     skipAnimation = false,
   ) => {
+    const myGen = ++applyLayoutGenRef.current
     setIsLayouting(true)
     try {
       let layoutedNodes: SchemaNode_RF[]
-      // Read positions fresh from the ref, not the closure. See ref decl above.
-      const originalPositions = effectivePositionsRef.current
+      // Read positions fresh — either from internal focus state via curated
+      // views map, or from legacy effectivePositionsRef (Submitted / callers
+      // without views). Keyed by our OWN focus state, so no lag.
+      const originalPositions = resolveCuratedPositions() ?? effectivePositionsRef.current
       if (layout === 'original' && originalPositions && Object.keys(originalPositions).length > 0) {
         // When initialFocusState is set, filter to neighbourhood subset
         let nodesToLayout = currentNodes
@@ -1295,6 +1336,7 @@ function SchemaGraphInner({
           const neighbourhood = getNeighbourhood(types, initialFocusState.typeName, initialFocusState.depth)
           nodesToLayout = currentNodes.filter(n => neighbourhood.has(n.id))
           edgesToSet = currentEdges.filter(e => neighbourhood.has(e.source) && neighbourhood.has(e.target))
+          if (myGen !== applyLayoutGenRef.current) return
           setEdges(edgesToSet as any)
         }
         // Restore stored positions verbatim
@@ -1307,22 +1349,26 @@ function SchemaGraphInner({
         layoutedNodes = result.nodes
       } else {
         const result = await getElkLayout(currentSpacing, currentNodes, currentEdges, layout)
+        // Bail if a newer applyLayout has been kicked off while ELK was running.
+        if (myGen !== applyLayoutGenRef.current) return
         layoutedNodes = result.nodes
       }
+      if (myGen !== applyLayoutGenRef.current) return
       setNodes(layoutedNodes as any)
       setLayoutApplied(true)
 
       if (!skipFitViewRef.current) {
         window.requestAnimationFrame(() => {
+          if (myGen !== applyLayoutGenRef.current) return
           fitView({ padding: 0.12, duration: skipAnimation ? 0 : 300 })
         })
       }
     } catch (err) {
       console.error('ELK layout failed:', err)
     } finally {
-      setIsLayouting(false)
+      if (myGen === applyLayoutGenRef.current) setIsLayouting(false)
     }
-  }, [setNodes, setEdges, fitView, initialFocusState, types])
+  }, [setNodes, setEdges, fitView, initialFocusState, types, resolveCuratedPositions])
 
   const debouncedApplyLayout = useMemo(
     () => debounce(
@@ -1412,28 +1458,30 @@ function SchemaGraphInner({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [curatedActiveId, curatedActiveViewKey, curatedRestoreVersion])
 
-  // ---- Curated positions changed (parent updated activeView after focus) ----
+  // ---- Curated positions changed ----
   //
-  // When curated is active and focus emits upward, the parent's viewKey
-  // updates, activeView switches, and curatedActive.positions may have a
-  // completely different set of positions. We need to re-apply them.
-  // We detect this by watching a fingerprint of the positions themselves.
-  const curatedPositionsSig = curatedActive
-    ? Object.entries(curatedActive.positions).map(([k, v]) => `${k}:${v.x},${v.y}`).sort().join('|')
+  // Re-apply layout when the underlying curated positions data changes.
+  // With the views-map approach this fires when any saved view changes
+  // (e.g. after save-back from a drag). Fingerprint covers all views so
+  // we notice when the parent updates the layout doc after a save.
+  const curatedFingerprint = curatedActive
+    ? (curatedActive.views
+        ? JSON.stringify(Object.keys(curatedActive.views).sort().map(k => [k, Object.keys(curatedActive.views![k].nodePositions).length]))
+        : Object.keys(curatedActive.positions).length.toString())
     : ''
-  const prevCuratedPositionsSigRef = useRef(curatedPositionsSig)
+  const prevCuratedFingerprintRef = useRef(curatedFingerprint)
   useEffect(() => {
     if (!curatedActive) {
-      prevCuratedPositionsSigRef.current = ''
+      prevCuratedFingerprintRef.current = ''
       return
     }
-    if (prevCuratedPositionsSigRef.current === curatedPositionsSig) return
-    prevCuratedPositionsSigRef.current = curatedPositionsSig
-    // Re-fire layout apply with the fresh positions (read via ref inside applyLayout).
+    if (prevCuratedFingerprintRef.current === curatedFingerprint) return
+    prevCuratedFingerprintRef.current = curatedFingerprint
+    // Re-apply the layout so the fresh positions land.
     setLayoutType('original')
     setLayoutApplied(false)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [curatedPositionsSig])
+  }, [curatedFingerprint])
 
   // ---- Imperative focus restore (curated layout re-selection) ----
   //
@@ -1825,6 +1873,14 @@ export interface SchemaGraphProps {
     positions: Record<string, {x: number; y: number}>
     edgeStyle: 'bezier' | 'step' | 'straight'
     spacing: number
+    /**
+     * Full views map for the active layout, keyed by view key ("__full" or
+     * "typeName:depth"). When provided, SchemaGraph reads positions from
+     * this map keyed by its OWN internal focus state, side-stepping the
+     * parent-emit → parent-recompute → prop-update lag that used to leave
+     * layouts applied with stale (previous view's) positions.
+     */
+    views?: Record<string, {nodePositions: Record<string, {x: number; y: number}>; edgeStyle: 'bezier' | 'step' | 'straight'; spacing: number}>
   } | null
   /**
    * Version counter that consumers bump when they want the graph to
