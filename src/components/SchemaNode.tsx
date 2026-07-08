@@ -248,6 +248,7 @@ function FieldRow({
         relative flex items-center justify-between gap-2 px-3 py-1.5 text-xs
         ${even ? 'bg-transparent' : 'bg-muted/40'}
         ${isRef ? 'bg-indigo-50/60 dark:bg-indigo-950/20' : ''}
+        ${isRef && primaryTarget && onReferenceClick ? 'schema-clickable' : ''}
       `}
       data-field-name={field.name}
       data-field-type={field.type}
@@ -260,6 +261,8 @@ function FieldRow({
         e.stopPropagation();
         onReferenceClick(primaryTarget);
       } : undefined}
+      onMouseDown={isRef && primaryTarget && onReferenceClick ? (e: React.MouseEvent) => e.stopPropagation() : undefined}
+      onPointerDown={isRef && primaryTarget && onReferenceClick ? (e: React.PointerEvent) => e.stopPropagation() : undefined}
       style={isRef && primaryTarget && onReferenceClick ? { cursor: 'pointer' } : undefined}
     >
       {/* Field name */}

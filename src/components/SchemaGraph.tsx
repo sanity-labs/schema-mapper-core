@@ -801,6 +801,7 @@ function GraphControls({
   onResetSpacing,
   hasOriginalPositions = false,
   disabled = false,
+  curatedActive = false,
 }: {
   layout: LayoutType
   onLayoutChange: (layout: LayoutType) => void
@@ -811,6 +812,8 @@ function GraphControls({
   onResetSpacing: () => void
   hasOriginalPositions?: boolean
   disabled?: boolean
+  /** When true, no algo tab is shown as selected — the app-level curated layout is in charge. */
+  curatedActive?: boolean
 }) {
   const layouts: LayoutType[] = hasOriginalPositions
     ? ['original', 'dagre', 'layered', 'force', 'stress']
@@ -819,13 +822,13 @@ function GraphControls({
 
   return (
     <div className={`absolute top-3 right-3 z-10 flex flex-col items-end gap-2 bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm rounded-lg p-2.5 transition-opacity ${disabled ? 'opacity-40 pointer-events-none' : ''}`}>
-      <div className="flex gap-1">
+      <div className="flex gap-1 items-center">
         {layouts.map((l) => (
           <Tab
             key={l}
             id={`layout-tab-${l}`}
             label={layoutLabels[l]}
-            selected={layout === l}
+            selected={!curatedActive && layout === l}
             onClick={() => onLayoutChange(l)}
           />
         ))}
@@ -871,7 +874,64 @@ function GraphControls({
 // Inner component (needs ReactFlowProvider ancestor for hooks)
 // ---------------------------------------------------------------------------
 
-function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateChange, fitViewTrigger, initialFocusState, onCrossDatasetNavigate, onMediaLibraryClick, onInaccessibleClick, accessibleProjectIds, pendingFocusType, pendingFocusDepth = 0, onViewportChange, restoreViewport, viewportNudge }: { types: DiscoveredType[]; initialPositions?: Record<string, { x: number; y: number }>; initialEdgeStyle?: EdgeStyle; onStateChange?: (state: SchemaGraphState) => void; fitViewTrigger?: number; initialFocusState?: { typeName: string; depth: 0 | 1 | 2 }; onCrossDatasetNavigate?: (datasetName: string, typeName?: string, sourceTypeName?: string, projectId?: string) => void; onMediaLibraryClick?: (fieldName: string, typeName: string) => void; onInaccessibleClick?: (projectName: string, datasetName: string) => void; accessibleProjectIds?: Set<string>; pendingFocusType?: string | null; pendingFocusDepth?: 0 | 1 | 2; onViewportChange?: (viewport: { x: number; y: number; zoom: number }) => void; restoreViewport?: { x: number; y: number; zoom: number } | null; viewportNudge?: { dy: number; trigger: number } | null }) {
+interface SchemaGraphInnerProps {
+  types: DiscoveredType[]
+  initialPositions?: Record<string, { x: number; y: number }>
+  initialEdgeStyle?: EdgeStyle
+  onStateChange?: (state: SchemaGraphState) => void
+  fitViewTrigger?: number
+  initialFocusState?: { typeName: string; depth: 0 | 1 | 2 }
+  onCrossDatasetNavigate?: (datasetName: string, typeName?: string, sourceTypeName?: string, projectId?: string) => void
+  onMediaLibraryClick?: (fieldName: string, typeName: string) => void
+  onInaccessibleClick?: (projectName: string, datasetName: string) => void
+  accessibleProjectIds?: Set<string>
+  pendingFocusType?: string | null
+  pendingFocusDepth?: 0 | 1 | 2
+  onViewportChange?: (viewport: { x: number; y: number; zoom: number }) => void
+  restoreViewport?: { x: number; y: number; zoom: number } | null
+  viewportNudge?: { dy: number; trigger: number } | null
+  curatedActive?: SchemaGraphProps['curatedActive']
+  curatedRestoreVersion?: number
+  curatedEditable?: boolean
+  onCuratedDrag?: (positions: Record<string, {x: number; y: number}>) => void
+  onCuratedExitForAlgo?: () => void
+  /** When curated is active + locked, called if the user clicks/interacts with a node. Consumer typically opens an "unlock this layout?" dialog. */
+  onLockedInteraction?: () => void
+  /**
+   * Imperative focus restore. Whenever restoreFocusVersion changes, the
+   * graph applies `restoreFocus` — non-null enters focus on that (type,
+   * depth); null exits focus. Used to reinstate a curated layout's
+   * last-active focus on re-selection.
+   */
+  restoreFocus?: { typeName: string; depth: 0 | 1 | 2 } | null
+  restoreFocusVersion?: number
+}
+
+function SchemaGraphInner({
+  types,
+  initialPositions,
+  initialEdgeStyle,
+  onStateChange,
+  fitViewTrigger,
+  initialFocusState,
+  onCrossDatasetNavigate,
+  onMediaLibraryClick,
+  onInaccessibleClick,
+  accessibleProjectIds,
+  pendingFocusType,
+  pendingFocusDepth = 0,
+  onViewportChange,
+  restoreViewport,
+  viewportNudge,
+  curatedActive,
+  curatedRestoreVersion,
+  curatedEditable,
+  onCuratedDrag,
+  onCuratedExitForAlgo,
+  onLockedInteraction,
+  restoreFocus,
+  restoreFocusVersion,
+}: SchemaGraphInnerProps) {
   const isDark = useDarkMode()
   const { fitView, getViewport, setViewport } = useReactFlow()
   const nodesInitialized = useNodesInitialized()
@@ -966,10 +1026,14 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
   onInaccessibleClickRef.current = onInaccessibleClick
 
   // Focus mode state
+  const focusStateRef = useRef<{typeName: string; depth: 0 | 1 | 2} | null>(null)
   const [focusState, setFocusState] = useState<{
     typeName: string
     depth: 0 | 1 | 2
   } | null>(null)
+  // Keep the focus ref in sync so ref-based readers (e.g. applyLayout via
+  // resolveCuratedPositions) see the current focus without a re-render.
+  focusStateRef.current = focusState
   // Search/filter state
   const [searchQuery, setSearchQuery] = useState('')
   const allTypesRef = useRef(types)
@@ -1154,8 +1218,10 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
       isSearching,
       visibleTypeCount: nodes.length,
       viewport: viewportRef.current,
+      edgeStyle,
+      spacing,
     })
-  }, [focusState, isSearching, nodes.length, onStateChange])
+  }, [focusState, isSearching, nodes.length, onStateChange, edgeStyle, spacing])
 
   const handleSearchChange = useCallback((query: string) => {
     setSearchQuery(query)
@@ -1199,7 +1265,54 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
     setLayoutApplied(false)
   }, [types, setNodes, setEdges])
 
-  // Apply ELK layout once nodes have been measured
+  // Apply ELK layout once nodes have been measured.
+  //
+  // "original" layout uses either curatedActive (when a curated layout is
+  // active) or the outer initialPositions (Submitted). Curated wins.
+  //
+  // For curated: we read positions from curatedActive.views keyed by our
+  // OWN internal focus state, so a focus change doesn't need a round-trip
+  // through the parent to update positions.
+  const curatedViews = curatedActive?.views
+  const curatedViewsRef = useRef(curatedViews)
+  curatedViewsRef.current = curatedViews
+  // Assigned below once focusState is declared
+  const curatedFallbackPositions = curatedActive?.positions
+  const initialPositionsRef = useRef(initialPositions)
+  initialPositionsRef.current = initialPositions
+  const curatedFallbackPositionsRef = useRef(curatedFallbackPositions)
+  curatedFallbackPositionsRef.current = curatedFallbackPositions
+  const curatedActiveRef = useRef(curatedActive)
+  curatedActiveRef.current = curatedActive
+
+  // Legacy shape used by callers that don't set views (backwards compat)
+  const effectiveOriginalPositions = curatedActive?.positions || initialPositions
+
+  const effectivePositionsRef = useRef(effectiveOriginalPositions)
+  effectivePositionsRef.current = effectiveOriginalPositions
+
+  // Compute positions to use right now — internal focus state drives view
+  // key selection when curatedActive.views is provided.
+  const resolveCuratedPositions = useCallback((): Record<string, {x: number; y: number}> | undefined => {
+    const active = curatedActiveRef.current
+    if (!active) return initialPositionsRef.current
+    const views = curatedViewsRef.current
+    if (views) {
+      const fs = focusStateRef.current
+      const viewKey = fs ? `${fs.typeName}:${fs.depth}` : '__full'
+      const v = views[viewKey]
+      if (v) return v.nodePositions
+      // No saved view for this focus — return empty so caller falls back to ELK
+      return undefined
+    }
+    return curatedFallbackPositionsRef.current
+  }, [])
+
+  // Request counter — each applyLayout call takes a token, and only writes
+  // its result back if the token still matches. Guards against async ELK
+  // resolving AFTER a newer applyLayout has already set correct positions.
+  const applyLayoutGenRef = useRef(0)
+
   const applyLayout = useCallback(async (
     currentNodes: SchemaNode_RF[],
     currentEdges: SchemaEdge[],
@@ -1207,10 +1320,15 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
     currentSpacing: number,
     skipAnimation = false,
   ) => {
+    const myGen = ++applyLayoutGenRef.current
     setIsLayouting(true)
     try {
       let layoutedNodes: SchemaNode_RF[]
-      if (layout === 'original' && initialPositions && Object.keys(initialPositions).length > 0) {
+      // Read positions fresh — either from internal focus state via curated
+      // views map, or from legacy effectivePositionsRef (Submitted / callers
+      // without views). Keyed by our OWN focus state, so no lag.
+      const originalPositions = resolveCuratedPositions() ?? effectivePositionsRef.current
+      if (layout === 'original' && originalPositions && Object.keys(originalPositions).length > 0) {
         // When initialFocusState is set, filter to neighbourhood subset
         let nodesToLayout = currentNodes
         let edgesToSet = currentEdges
@@ -1218,34 +1336,39 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
           const neighbourhood = getNeighbourhood(types, initialFocusState.typeName, initialFocusState.depth)
           nodesToLayout = currentNodes.filter(n => neighbourhood.has(n.id))
           edgesToSet = currentEdges.filter(e => neighbourhood.has(e.source) && neighbourhood.has(e.target))
+          if (myGen !== applyLayoutGenRef.current) return
           setEdges(edgesToSet as any)
         }
-        // Restore customer's original node positions
+        // Restore stored positions verbatim
         layoutedNodes = nodesToLayout.map(n => ({
           ...n,
-          position: initialPositions[n.id] || n.position,
+          position: originalPositions[n.id] || n.position,
         }))
       } else if (layout === 'dagre') {
         const result = getDagreLayout(currentNodes, currentEdges, currentSpacing)
         layoutedNodes = result.nodes
       } else {
         const result = await getElkLayout(currentSpacing, currentNodes, currentEdges, layout)
+        // Bail if a newer applyLayout has been kicked off while ELK was running.
+        if (myGen !== applyLayoutGenRef.current) return
         layoutedNodes = result.nodes
       }
+      if (myGen !== applyLayoutGenRef.current) return
       setNodes(layoutedNodes as any)
       setLayoutApplied(true)
 
       if (!skipFitViewRef.current) {
         window.requestAnimationFrame(() => {
+          if (myGen !== applyLayoutGenRef.current) return
           fitView({ padding: 0.12, duration: skipAnimation ? 0 : 300 })
         })
       }
     } catch (err) {
       console.error('ELK layout failed:', err)
     } finally {
-      setIsLayouting(false)
+      if (myGen === applyLayoutGenRef.current) setIsLayouting(false)
     }
-  }, [setNodes, setEdges, fitView, initialPositions, initialFocusState, types])
+  }, [setNodes, setEdges, fitView, initialFocusState, types, resolveCuratedPositions])
 
   const debouncedApplyLayout = useMemo(
     () => debounce(
@@ -1272,8 +1395,123 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
     }
   }, [nodesInitialized, layoutApplied, nodes, edges, layoutType, spacing, applyLayout])
 
+  // ---- Curated layout: react to activation/deactivation and view changes ----
+  //
+  // When curatedActive is set (or changes id/viewKey), force layout='original'
+  // and reset layoutApplied — the initial-layout effect re-runs, calling
+  // applyLayout('original', ...) which reads effectiveOriginalPositions and
+  // snaps to the curated positions. Same code path as Submitted.
+  //
+  // When curatedActive is cleared, restore the previously-selected algo
+  // from localStorage (which the caller may have just written) or fall back
+  // to a sensible default.
+  const curatedActiveId = curatedActive?.id ?? null
+  const curatedActiveViewKey = curatedActive?.viewKey ?? null
+  const prevCuratedIdRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    const prev = prevCuratedIdRef.current
+    prevCuratedIdRef.current = curatedActiveId
+
+    // Layout selection changed (either direction, or between two layouts) —
+    // exit any active focus properly (rebuild full graph, restore pre-focus
+    // layout). Just calling setFocusState(null) would clear the state var
+    // but leave the subset nodes/edges rendered — half-exited limbo.
+    if (prev !== curatedActiveId) {
+      handleExitFocusRef.current?.()
+    }
+
+    if (curatedActive) {
+      // Restore stored edge style if it differs.
+      if (edgeStyleRef.current !== curatedActive.edgeStyle) {
+        setEdgeStyle(curatedActive.edgeStyle)
+        edgeStyleRef.current = curatedActive.edgeStyle
+      }
+      // Force 'original' + trigger re-layout via layoutApplied=false.
+      setLayoutType('original')
+      setLayoutApplied(false)
+    } else if (prev) {
+      // Curated cleared — pick the algo the caller wants us to run.
+      let target: LayoutType = layoutType
+      try {
+        const saved = localStorage.getItem('schema-mapper:layoutType') as LayoutType | null
+        if (saved && ['dagre', 'layered', 'force', 'stress'].includes(saved)) {
+          target = saved
+        }
+      } catch {}
+      if (target === 'original' && !(initialPositions && Object.keys(initialPositions).length > 0)) {
+        target = 'force'
+      }
+      // Also restore the user's pre-layout edge-style preference — otherwise
+      // the layout's stored edgeStyle sticks around in state (and in the
+      // GraphControls tab UI) even though we're no longer in that layout.
+      try {
+        const savedStyle = localStorage.getItem('schema-mapper:edgeStyle') as EdgeStyle | null
+        if (savedStyle && ['bezier', 'step', 'straight'].includes(savedStyle) && savedStyle !== edgeStyleRef.current) {
+          setEdgeStyle(savedStyle)
+          edgeStyleRef.current = savedStyle
+        }
+      } catch {}
+      setLayoutType(target)
+      setLayoutApplied(false)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [curatedActiveId, curatedActiveViewKey, curatedRestoreVersion])
+
+  // ---- Curated positions changed ----
+  //
+  // Re-apply layout when the underlying curated positions data changes.
+  // With the views-map approach this fires when any saved view changes
+  // (e.g. after save-back from a drag). Fingerprint covers all views so
+  // we notice when the parent updates the layout doc after a save.
+  const curatedFingerprint = curatedActive
+    ? (curatedActive.views
+        ? JSON.stringify(Object.keys(curatedActive.views).sort().map(k => [k, Object.keys(curatedActive.views![k].nodePositions).length]))
+        : Object.keys(curatedActive.positions).length.toString())
+    : ''
+  const prevCuratedFingerprintRef = useRef(curatedFingerprint)
+  useEffect(() => {
+    if (!curatedActive) {
+      prevCuratedFingerprintRef.current = ''
+      return
+    }
+    if (prevCuratedFingerprintRef.current === curatedFingerprint) return
+    prevCuratedFingerprintRef.current = curatedFingerprint
+    // Re-apply the layout so the fresh positions land.
+    setLayoutType('original')
+    setLayoutApplied(false)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [curatedFingerprint])
+
+  // ---- Imperative focus restore (curated layout re-selection) ----
+  //
+  // When `restoreFocusVersion` changes, apply `restoreFocus`. This runs
+  // AFTER the curated-active effect above has already exited any previous
+  // focus, so we start from a clean full-graph state.
+  const prevRestoreVersionRef = useRef<number | undefined>(undefined)
+  useEffect(() => {
+    if (restoreFocusVersion === undefined) return
+    if (prevRestoreVersionRef.current === restoreFocusVersion) return
+    prevRestoreVersionRef.current = restoreFocusVersion
+    if (restoreFocus && handleFocusRef.current) {
+      // Small delay so any layout-selection re-layout can settle first.
+      const t = setTimeout(() => {
+        handleFocusRef.current?.(restoreFocus.typeName, restoreFocus.depth)
+      }, 50)
+      return () => clearTimeout(t)
+    }
+  }, [restoreFocusVersion, restoreFocus])
+
   // Re-layout when layout type changes
   const handleLayoutChange = useCallback((newLayout: LayoutType) => {
+    // When a curated layout is active, tapping an algo tab exits the layout
+    // and applies the algo. (Simple + expected — users don't want a prompt.)
+    if (curatedActive && newLayout !== 'original' && onCuratedExitForAlgo) {
+      onCuratedExitForAlgo()
+      // Write the chosen algo so the curated-deactivation effect picks it up.
+      try { localStorage.setItem('schema-mapper:layoutType', newLayout) } catch {}
+      return
+    }
     debouncedApplyLayout.cancel()
     setLayoutType(newLayout)
     try { localStorage.setItem('schema-mapper:layoutType', newLayout) } catch {}
@@ -1298,7 +1536,7 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
     } else {
       applyLayout(nodes as SchemaNode_RF[], edges, newLayout, spacingMap[newLayout])
     }
-  }, [nodes, edges, spacingMap, applyLayout, debouncedApplyLayout, initialEdgeStyle, setEdgeStyle, initialFocusState, focusState, types, setNodes, setEdges])
+  }, [nodes, edges, spacingMap, applyLayout, debouncedApplyLayout, initialEdgeStyle, setEdgeStyle, initialFocusState, focusState, types, setNodes, setEdges, curatedActive, onCuratedExitForAlgo])
 
   const handleSpacingChange = useCallback((value: number) => {
     setSpacingMap(prev => {
@@ -1334,7 +1572,9 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
       preFocusLayoutRef.current = { layout: layoutType, spacing: spacing }
     }
     // If on Submitted layout, switch to force for focus (positions don't apply to subsets)
-    if (layoutType === 'original') {
+    // EXCEPTION: when curated is active, curatedActive.positions is view-specific
+    // (keyed by focus signature), so 'original' can restore the correct subset positions.
+    if (layoutType === 'original' && !curatedActive) {
       setLayoutType('force')
       searchLayoutOverrideRef.current = { layout: 'force', spacing: DEFAULT_SPACING.force }
     }
@@ -1361,7 +1601,7 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
 
     // Re-layout the subset
     setLayoutApplied(false)
-  }, [types, nodes, edges, focusState, searchQuery, layoutType, spacing, setNodes, setEdges])
+  }, [types, nodes, edges, focusState, searchQuery, layoutType, spacing, setNodes, setEdges, curatedActive])
   handleFocusRef.current = handleFocus
 
   // Ref-stable callback for reference navigation (avoids circular deps)
@@ -1440,8 +1680,23 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
   }, [focusState, handleExitFocus])
 
   return (
-    <div ref={containerRef} className="relative w-full h-full">
-      <GraphControls layout={layoutType} onLayoutChange={handleLayoutChange} edgeStyle={edgeStyle} onEdgeStyleChange={handleEdgeStyleChange} spacing={spacing} onSpacingChange={handleSpacingChange} onResetSpacing={handleResetSpacing} hasOriginalPositions={!!initialPositions && Object.keys(initialPositions).length > 0} disabled={isSearching} />
+    <div ref={containerRef} className={`relative w-full h-full ${curatedActive && !curatedEditable ? 'schema-graph-locked' : ''}`}>
+      <style>{`
+        /* Locked curated layout: node body shows the "no-touch" cursor,
+           but reference-link rows and cross-dataset/media/inaccessible
+           lozenges keep their pointer cursor so navigation away from
+           the type still works. */
+        .schema-graph-locked .react-flow__node {
+          cursor: not-allowed !important;
+        }
+        .schema-graph-locked .react-flow__node .schema-clickable,
+        .schema-graph-locked .react-flow__node .schema-clickable *,
+        .schema-graph-locked .react-flow__node .cursor-pointer,
+        .schema-graph-locked .react-flow__node .cursor-pointer * {
+          cursor: pointer !important;
+        }
+      `}</style>
+      <GraphControls layout={layoutType} onLayoutChange={handleLayoutChange} edgeStyle={edgeStyle} onEdgeStyleChange={handleEdgeStyleChange} spacing={spacing} onSpacingChange={handleSpacingChange} onResetSpacing={handleResetSpacing} hasOriginalPositions={!!initialPositions && Object.keys(initialPositions).length > 0} disabled={isSearching} curatedActive={!!curatedActive} />
       {isLayouting && (
         <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10 bg-white/90 dark:bg-gray-900/90 backdrop-blur-sm border rounded-md px-3 py-1 text-xs text-gray-500 dark:text-gray-400">
           Layouting…
@@ -1485,6 +1740,14 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
         nodes={nodes}
         edges={edges}
         onNodesChange={onNodesChange}
+        onNodeDragStop={curatedActive && curatedEditable && onCuratedDrag ? () => {
+          // Snapshot all current node positions after user finishes a drag.
+          // Called once per drag-stop (React Flow guarantees this).
+          const positions: Record<string, {x: number; y: number}> = {}
+          for (const n of nodes) positions[n.id] = {x: n.position.x, y: n.position.y}
+          onCuratedDrag(positions)
+        } : undefined}
+        nodesDraggable={curatedActive ? !!curatedEditable : true}
         onEdgesChange={onEdgesChange}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
@@ -1503,6 +1766,12 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
           animated: false,
         }}
         onNodeClick={(event, node) => {
+          // Curated layout is active but locked — clicking a node should
+          // prompt to unlock instead of opening the focus menu.
+          if (curatedActive && !curatedEditable && onLockedInteraction) {
+            onLockedInteraction()
+            return
+          }
           const bounds = containerRef.current?.getBoundingClientRect()
           if (!bounds) return
           setContextMenu({
@@ -1513,6 +1782,10 @@ function SchemaGraphInner({ types, initialPositions, initialEdgeStyle, onStateCh
         }}
         onNodeContextMenu={(event, node) => {
           event.preventDefault()
+          if (curatedActive && !curatedEditable && onLockedInteraction) {
+            onLockedInteraction()
+            return
+          }
           const bounds = containerRef.current?.getBoundingClientRect()
           if (!bounds) return
           setContextMenu({
@@ -1559,6 +1832,10 @@ export interface SchemaGraphState {
   isSearching: boolean
   visibleTypeCount: number
   viewport?: { x: number; y: number; zoom: number }
+  /** Current edge style — surfaced so consumers (e.g. curated-layout auto-save) can persist it */
+  edgeStyle?: 'bezier' | 'step' | 'straight'
+  /** Current spacing multiplier — surfaced for curated-layout auto-save */
+  spacing?: number
 }
 
 export interface SchemaGraphProps {
@@ -1591,10 +1868,62 @@ export interface SchemaGraphProps {
   restoreViewport?: { x: number; y: number; zoom: number } | null
   /** Instant viewport Y nudge (for nav collapse/expand center compensation). Increment trigger to apply. */
   viewportNudge?: { dy: number; trigger: number } | null
+
+  // --- Curated Layouts integration (schema-mapper app-level) ---
+  /**
+   * When set, the graph is displaying a stored curated layout. Positions
+   * come from `curatedActive.positions` and are applied verbatim (no
+   * algorithm). `viewKey` distinguishes the full-graph vs focused sub-views
+   * within the same curated-layout doc.
+   */
+  curatedActive?: {
+    id: string
+    viewKey: string
+    positions: Record<string, {x: number; y: number}>
+    edgeStyle: 'bezier' | 'step' | 'straight'
+    spacing: number
+    /**
+     * Full views map for the active layout, keyed by view key ("__full" or
+     * "typeName:depth"). When provided, SchemaGraph reads positions from
+     * this map keyed by its OWN internal focus state, side-stepping the
+     * parent-emit → parent-recompute → prop-update lag that used to leave
+     * layouts applied with stale (previous view's) positions.
+     */
+    views?: Record<string, {nodePositions: Record<string, {x: number; y: number}>; edgeStyle: 'bezier' | 'step' | 'straight'; spacing: number}>
+  } | null
+  /**
+   * Version counter that consumers bump when they want the graph to
+   * re-apply the current `curatedActive` snapshot (positions, edge style,
+   * spacing). Used on unlock so that any drift while locked (edge style
+   * changes, etc.) is discarded and the saved state is restored.
+   */
+  curatedRestoreVersion?: number
+  /** When true (and curatedActive set), user can drag nodes; positions fire via onCuratedDrag. */
+  curatedEditable?: boolean
+  /**
+   * Fires (debounced upstream) when the user drags nodes on an editable
+   * curated layout. Called with the current position map for ALL nodes on
+   * screen. The caller writes it to the appropriate viewKey.
+   */
+  onCuratedDrag?: (positions: Record<string, {x: number; y: number}>) => void
+  /**
+   * When curatedActive is set and the user clicks an algorithm tab, this
+   * fires INSTEAD of applying the algo. Caller shows a confirm dialog.
+   */
+  onCuratedExitForAlgo?: () => void
+  /** When curated is active + locked, called if the user clicks/interacts with a node. Consumer typically opens an "unlock this layout?" dialog. */
+  onLockedInteraction?: () => void
+  /**
+   * Imperative focus restore. Whenever restoreFocusVersion changes, the
+   * graph applies restoreFocus — non-null enters focus on that (type,
+   * depth); null exits focus.
+   */
+  restoreFocus?: { typeName: string; depth: 0 | 1 | 2 } | null
+  restoreFocusVersion?: number
 }
 
-export function SchemaGraph({ types, initialPositions, initialEdgeStyle, onStateChange, fitViewTrigger, initialFocusState, onCrossDatasetNavigate, onMediaLibraryClick, onInaccessibleClick, accessibleProjectIds, pendingFocusType, pendingFocusDepth, onViewportChange, restoreViewport, viewportNudge }: SchemaGraphProps) {
-  if (types.length === 0) {
+export function SchemaGraph(props: SchemaGraphProps) {
+  if (props.types.length === 0) {
     return (
       <div className="flex items-center justify-center w-full h-full text-gray-400 text-sm">
         No schema types discovered yet.
@@ -1605,7 +1934,7 @@ export function SchemaGraph({ types, initialPositions, initialEdgeStyle, onState
   return (
     <div style={{ width: '100%', height: '100%', minHeight: 500 }}>
       <ReactFlowProvider>
-        <SchemaGraphInner types={types} initialPositions={initialPositions} initialEdgeStyle={initialEdgeStyle} onStateChange={onStateChange} fitViewTrigger={fitViewTrigger} initialFocusState={initialFocusState} onCrossDatasetNavigate={onCrossDatasetNavigate} onMediaLibraryClick={onMediaLibraryClick} onInaccessibleClick={onInaccessibleClick} accessibleProjectIds={accessibleProjectIds} pendingFocusType={pendingFocusType} pendingFocusDepth={pendingFocusDepth} onViewportChange={onViewportChange} restoreViewport={restoreViewport} viewportNudge={viewportNudge} />
+        <SchemaGraphInner {...props} />
       </ReactFlowProvider>
     </div>
   )
