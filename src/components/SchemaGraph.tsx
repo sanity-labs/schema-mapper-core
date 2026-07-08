@@ -1026,6 +1026,7 @@ function SchemaGraphInner({
   onInaccessibleClickRef.current = onInaccessibleClick
 
   // Focus mode state
+  const focusStateRef = useRef<{typeName: string; depth: 0 | 1 | 2} | null>(null)
   const [focusState, setFocusState] = useState<{
     typeName: string
     depth: 0 | 1 | 2
@@ -1275,7 +1276,6 @@ function SchemaGraphInner({
   const curatedViews = curatedActive?.views
   const curatedViewsRef = useRef(curatedViews)
   curatedViewsRef.current = curatedViews
-  const focusStateRef = useRef<{typeName: string; depth: 0 | 1 | 2} | null>(null)
   // Assigned below once focusState is declared
   const curatedFallbackPositions = curatedActive?.positions
   const initialPositionsRef = useRef(initialPositions)
