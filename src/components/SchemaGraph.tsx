@@ -1686,6 +1686,13 @@ function SchemaGraphInner({
         .schema-graph-locked .react-flow__node * {
           cursor: not-allowed !important;
         }
+        /* Lozenges (cross-dataset refs, media library, inaccessible project markers)
+           stay clickable — they navigate away from the schema type, which is a valid
+           interaction even when the layout is locked. */
+        .schema-graph-locked .react-flow__node .cursor-pointer,
+        .schema-graph-locked .react-flow__node .cursor-pointer * {
+          cursor: pointer !important;
+        }
       `}</style>
       <GraphControls layout={layoutType} onLayoutChange={handleLayoutChange} edgeStyle={edgeStyle} onEdgeStyleChange={handleEdgeStyleChange} spacing={spacing} onSpacingChange={handleSpacingChange} onResetSpacing={handleResetSpacing} hasOriginalPositions={!!initialPositions && Object.keys(initialPositions).length > 0} disabled={isSearching} curatedActive={!!curatedActive} />
       {isLayouting && (
