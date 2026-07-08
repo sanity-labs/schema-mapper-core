@@ -1417,7 +1417,12 @@ function SchemaGraphInner({
     // exit any active focus properly (rebuild full graph, restore pre-focus
     // layout). Just calling setFocusState(null) would clear the state var
     // but leave the subset nodes/edges rendered — half-exited limbo.
-    if (prev !== curatedActiveId) {
+    //
+    // EXCEPTION: null → <newLayoutId> is a fresh create/select from an algo
+    // view. If the user was focused, that focus IS the sub-view we just
+    // saved — exiting focus would clobber the current view and swap in an
+    // empty __full view. Leave focus alone in that direction.
+    if (prev !== curatedActiveId && prev !== null) {
       handleExitFocusRef.current?.()
     }
 
