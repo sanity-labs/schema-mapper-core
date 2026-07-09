@@ -1338,10 +1338,14 @@ function SchemaGraphInner({
       // without views). Keyed by our OWN focus state, so no lag.
       const originalPositions = resolveCuratedPositions() ?? effectivePositionsRef.current
       if (layout === 'original' && originalPositions && Object.keys(originalPositions).length > 0) {
-        // When initialFocusState is set, filter to neighbourhood subset
+        // When initialFocusState is set AND we're not in any active-user or
+        // curated context, filter to that submitted-focus neighbourhood.
+        // Otherwise the caller passes an already-filtered subset (via
+        // handleFocus or curated views) and re-filtering to a different
+        // neighbourhood would produce a wrong-nodes-at-wrong-positions render.
         let nodesToLayout = currentNodes
         let edgesToSet = currentEdges
-        if (initialFocusState) {
+        if (initialFocusState && !focusStateRef.current && !curatedActiveRef.current) {
           const neighbourhood = getNeighbourhood(types, initialFocusState.typeName, initialFocusState.depth)
           nodesToLayout = currentNodes.filter(n => neighbourhood.has(n.id))
           edgesToSet = currentEdges.filter(e => neighbourhood.has(e.source) && neighbourhood.has(e.target))
@@ -1753,7 +1757,7 @@ function SchemaGraphInner({
           Layouting…
         </div>
       )}
-      {!focusState && layoutType === 'original' && initialFocusState && (() => {
+      {!focusState && !curatedActive && layoutType === 'original' && initialFocusState && (() => {
         const neighbourhood = getNeighbourhood(types, initialFocusState.typeName, initialFocusState.depth)
         const hiddenCount = types.length - neighbourhood.size
         return (
