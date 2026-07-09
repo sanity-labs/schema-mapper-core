@@ -1698,7 +1698,7 @@ function SchemaGraphInner({
   }, [focusState, handleExitFocus])
 
   return (
-    <div ref={containerRef} className={`relative w-full h-full ${curatedActive && !curatedEditable && !curatedReadOnly ? 'schema-graph-locked' : ''}`}>
+    <div ref={containerRef} className={`relative w-full h-full ${curatedActive && !curatedEditable && !curatedReadOnly ? 'schema-graph-locked' : ''} ${curatedActive && curatedReadOnly ? 'schema-graph-readonly' : ''}`}>
       <style>{`
         /* Locked curated layout: node body shows the "no-touch" cursor,
            but reference-link rows and cross-dataset/media/inaccessible
@@ -1711,6 +1711,22 @@ function SchemaGraphInner({
         .schema-graph-locked .react-flow__node .schema-clickable *,
         .schema-graph-locked .react-flow__node .cursor-pointer,
         .schema-graph-locked .react-flow__node .cursor-pointer * {
+          cursor: pointer !important;
+        }
+        /* Read-only curated layout (team-shared in customer app): nodes
+           can't be dragged or clicked-for-focus, so they get the grab
+           cursor like the pan canvas. Reference lozenges + clickables
+           keep pointer so navigation still works. */
+        .schema-graph-readonly .react-flow__node {
+          cursor: grab !important;
+        }
+        .schema-graph-readonly .react-flow__node:active {
+          cursor: grabbing !important;
+        }
+        .schema-graph-readonly .react-flow__node .schema-clickable,
+        .schema-graph-readonly .react-flow__node .schema-clickable *,
+        .schema-graph-readonly .react-flow__node .cursor-pointer,
+        .schema-graph-readonly .react-flow__node .cursor-pointer * {
           cursor: pointer !important;
         }
       `}</style>
