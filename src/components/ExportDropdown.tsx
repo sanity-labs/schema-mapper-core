@@ -466,7 +466,7 @@ export function ExportDropdown({ graphRef, context, types, onExport, extraMenuIt
         Export
       </button>
       {open && (
-        <div className="absolute right-0 top-full mt-1 z-20 bg-white dark:bg-gray-800 rounded-md py-1 min-w-[160px] border border-gray-200 dark:border-gray-700">
+        <div className="absolute right-0 top-full mt-1 z-20 bg-white dark:bg-gray-800 rounded-lg shadow-lg py-1 min-w-[200px] border border-gray-200 dark:border-gray-700">
           <button
             onClick={handlePDF}
             disabled={!!exporting}
