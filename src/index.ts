@@ -31,3 +31,5 @@ export type { BadgeProps } from './components/ui/badge'
 
 // Utilities
 export { cn } from './lib/utils'
+
+export { SanityLogoIcon } from './components/SanityLogoIcon'
