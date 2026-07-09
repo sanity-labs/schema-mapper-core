@@ -893,6 +893,14 @@ interface SchemaGraphInnerProps {
   curatedActive?: SchemaGraphProps['curatedActive']
   curatedRestoreVersion?: number
   curatedEditable?: boolean
+  /**
+   * When true, curated mode is active but the layout is permanently locked
+   * (e.g. read-only team-shared layout in the customer app). Suppresses the
+   * "no-touch" cursor + the onLockedInteraction call — the graph behaves
+   * like a normal pan/zoom canvas that just can't be edited. Nodes remain
+   * non-draggable via curatedEditable=false.
+   */
+  curatedReadOnly?: boolean
   onCuratedDrag?: (positions: Record<string, {x: number; y: number}>) => void
   onCuratedExitForAlgo?: () => void
   /** When curated is active + locked, called if the user clicks/interacts with a node. Consumer typically opens an "unlock this layout?" dialog. */
@@ -926,6 +934,7 @@ function SchemaGraphInner({
   curatedActive,
   curatedRestoreVersion,
   curatedEditable,
+  curatedReadOnly,
   onCuratedDrag,
   onCuratedExitForAlgo,
   onLockedInteraction,
@@ -1689,7 +1698,7 @@ function SchemaGraphInner({
   }, [focusState, handleExitFocus])
 
   return (
-    <div ref={containerRef} className={`relative w-full h-full ${curatedActive && !curatedEditable ? 'schema-graph-locked' : ''}`}>
+    <div ref={containerRef} className={`relative w-full h-full ${curatedActive && !curatedEditable && !curatedReadOnly ? 'schema-graph-locked' : ''}`}>
       <style>{`
         /* Locked curated layout: node body shows the "no-touch" cursor,
            but reference-link rows and cross-dataset/media/inaccessible
@@ -1777,8 +1786,14 @@ function SchemaGraphInner({
         onNodeClick={(event, node) => {
           // Curated layout is active but locked — clicking a node should
           // prompt to unlock instead of opening the focus menu.
-          if (curatedActive && !curatedEditable && onLockedInteraction) {
+          // Exception: curatedReadOnly (team-shared layout in the customer
+          // app) — no unlock is possible, so a click is just a no-op.
+          if (curatedActive && !curatedEditable && !curatedReadOnly && onLockedInteraction) {
             onLockedInteraction()
+            return
+          }
+          if (curatedActive && !curatedEditable && curatedReadOnly) {
+            // Read-only: swallow node clicks silently.
             return
           }
           const bounds = containerRef.current?.getBoundingClientRect()
@@ -1791,8 +1806,11 @@ function SchemaGraphInner({
         }}
         onNodeContextMenu={(event, node) => {
           event.preventDefault()
-          if (curatedActive && !curatedEditable && onLockedInteraction) {
+          if (curatedActive && !curatedEditable && !curatedReadOnly && onLockedInteraction) {
             onLockedInteraction()
+            return
+          }
+          if (curatedActive && !curatedEditable && curatedReadOnly) {
             return
           }
           const bounds = containerRef.current?.getBoundingClientRect()
@@ -1909,6 +1927,12 @@ export interface SchemaGraphProps {
   curatedRestoreVersion?: number
   /** When true (and curatedActive set), user can drag nodes; positions fire via onCuratedDrag. */
   curatedEditable?: boolean
+  /**
+   * When true, curated mode is active but the layout is permanently locked
+   * (e.g. read-only team-shared layout in the customer app). Suppresses the
+   * "no-touch" cursor + the onLockedInteraction call.
+   */
+  curatedReadOnly?: boolean
   /**
    * Fires (debounced upstream) when the user drags nodes on an editable
    * curated layout. Called with the current position map for ALL nodes on
