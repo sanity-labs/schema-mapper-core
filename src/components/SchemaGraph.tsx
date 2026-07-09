@@ -1518,12 +1518,29 @@ function SchemaGraphInner({
 
   // Re-layout when layout type changes
   const handleLayoutChange = useCallback((newLayout: LayoutType) => {
-    // When a curated layout is active, tapping an algo tab exits the layout
-    // and applies the algo. (Simple + expected — users don't want a prompt.)
+    // If the user has a live focus, exit it first. Applies to ANY layout switch —
+    // algo→algo, focused-curated→Submitted, focused-algo→Submitted, etc.
+    // handleExitFocus restores the pre-focus full graph and clears focusState so
+    // the target layout renders the whole schema (or the initialFocusState
+    // neighbourhood for Submitted, if set).
+    if (focusState) {
+      handleExitFocusRef.current?.()
+    }
+    // When a curated layout is active, tapping an algo tab (or Submitted) exits
+    // the layout and applies the algo. (Simple + expected — users don't want a
+    // prompt.)
     if (curatedActive && newLayout !== 'original' && onCuratedExitForAlgo) {
       onCuratedExitForAlgo()
       // Write the chosen algo so the curated-deactivation effect picks it up.
       try { localStorage.setItem('schema-mapper:layoutType', newLayout) } catch {}
+      return
+    }
+    if (curatedActive && newLayout === 'original' && onCuratedExitForAlgo) {
+      // Submitted from a curated layout — exit curated so the parent stops
+      // treating it as active, and let the deactivation effect fall through
+      // to 'original' (which serves Submitted positions).
+      onCuratedExitForAlgo()
+      try { localStorage.setItem('schema-mapper:layoutType', 'original') } catch {}
       return
     }
     debouncedApplyLayout.cancel()
