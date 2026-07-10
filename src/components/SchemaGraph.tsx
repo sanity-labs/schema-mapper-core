@@ -1460,14 +1460,21 @@ function SchemaGraphInner({
       if (target === 'original' && !(initialPositions && Object.keys(initialPositions).length > 0)) {
         target = 'force'
       }
-      // Also restore the user's pre-layout edge-style preference — otherwise
-      // the layout's stored edgeStyle sticks around in state (and in the
-      // GraphControls tab UI) even though we're no longer in that layout.
+      // Restore edge style based on target:
+      // - Submitted (original): use the submission's initialEdgeStyle
+      // - Algo (force/layered/dagre/stress): use the user's saved algo style
+      // Falling back to localStorage-saved style either way.
       try {
         const savedStyle = localStorage.getItem('schema-mapper:edgeStyle') as EdgeStyle | null
-        if (savedStyle && ['bezier', 'step', 'straight'].includes(savedStyle) && savedStyle !== edgeStyleRef.current) {
-          setEdgeStyle(savedStyle)
-          edgeStyleRef.current = savedStyle
+        const preferred: EdgeStyle | null =
+          target === 'original' && initialEdgeStyle
+            ? initialEdgeStyle
+            : savedStyle && ['bezier', 'step', 'straight'].includes(savedStyle)
+              ? savedStyle
+              : null
+        if (preferred && preferred !== edgeStyleRef.current) {
+          setEdgeStyle(preferred)
+          edgeStyleRef.current = preferred
         }
       } catch {}
       setLayoutType(target)
@@ -1543,6 +1550,13 @@ function SchemaGraphInner({
       // Submitted from a curated layout — exit curated so the parent stops
       // treating it as active, and let the deactivation effect fall through
       // to 'original' (which serves Submitted positions).
+      // Also restore the submission's initialEdgeStyle so Submitted always
+      // renders with its own line type, not whatever the curated layout
+      // was using.
+      if (initialEdgeStyle && edgeStyleRef.current !== initialEdgeStyle) {
+        setEdgeStyle(initialEdgeStyle)
+        edgeStyleRef.current = initialEdgeStyle
+      }
       onCuratedExitForAlgo()
       try { localStorage.setItem('schema-mapper:layoutType', 'original') } catch {}
       return
