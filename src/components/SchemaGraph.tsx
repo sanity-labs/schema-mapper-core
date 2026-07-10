@@ -1337,9 +1337,15 @@ function SchemaGraphInner({
       // views map, or from legacy effectivePositionsRef (Submitted / callers
       // without views). Keyed by our OWN focus state, so no lag.
       const originalPositions = resolveCuratedPositions() ?? effectivePositionsRef.current
-      // eslint-disable-next-line no-console
-      console.log('[applyLayout] gen', myGen, 'layout', layout, 'nodes', currentNodes.length, 'focus', focusStateRef.current, 'curated', curatedActiveRef.current?.id ?? null, 'viewKey', focusStateRef.current ? `${focusStateRef.current.typeName}:${focusStateRef.current.depth}` : '__full', 'origPos.n', originalPositions ? Object.keys(originalPositions).length : 0, 'sample', originalPositions ? Object.entries(originalPositions).slice(0,2) : null)
-      if (layout === 'original' && originalPositions && Object.keys(originalPositions).length > 0) {
+      // When curated is active AND we have saved positions for the current
+      // view, ALWAYS use them regardless of layoutType. The curated-active
+      // effect fires setLayoutType('original') but effect ordering means
+      // this applyLayout call can see a stale layoutType (e.g. 'force' from
+      // a prior handleFocus). Gating on the curated intent directly is the
+      // reliable path — a curated layout by definition means "use stored
+      // positions verbatim", never re-layout.
+      const useCuratedPositions = !!curatedActiveRef.current && originalPositions && Object.keys(originalPositions).length > 0
+      if ((layout === 'original' || useCuratedPositions) && originalPositions && Object.keys(originalPositions).length > 0) {
         // When initialFocusState is set AND we're not in any active-user or
         // curated context, filter to that submitted-focus neighbourhood.
         // Otherwise the caller passes an already-filtered subset (via
