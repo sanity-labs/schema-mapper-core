@@ -1683,17 +1683,28 @@ function SchemaGraphInner({
     }
     preFocusLayoutRef.current = null
 
-    // Restore pre-focus state and re-apply layout
-    if (preFocusNodesRef.current && preFocusEdgesRef.current) {
-      setNodes(preFocusNodesRef.current as any)
-      setEdges(preFocusEdgesRef.current as any)
-      preFocusNodesRef.current = null
-      preFocusEdgesRef.current = null
+    // Restore pre-focus state and re-apply layout.
+    //
+    // Rebuild from `types` rather than trusting preFocusNodesRef —
+    // that ref can hold a subset when the graph was mounted into a
+    // subset context (e.g. Submitted with initialFocusState, or when
+    // handleFocus imperatively fired before the graph ever showed the
+    // full set). Rebuilding from `types` is the source of truth for
+    // "the full graph."
+    const { nodes: fullNodes, edges: fullEdges } = buildNodesAndEdges(types, edgeStyleRef.current, {
+      onCrossDatasetNavigate: onCrossDatasetNavigateRef.current,
+      onMediaLibraryClick: onMediaLibraryClickRef.current,
+      onInaccessibleClick: onInaccessibleClickRef.current,
+      accessibleProjectIds,
+    })
+    setNodes(fullNodes as any)
+    setEdges(fullEdges as any)
+    preFocusNodesRef.current = null
+    preFocusEdgesRef.current = null
 
-      // Trigger re-layout so restored layout type is actually applied
-      setLayoutApplied(false)
-    }
-  }, [setNodes, setEdges])
+    // Trigger re-layout so the restored layout type is actually applied
+    setLayoutApplied(false)
+  }, [setNodes, setEdges, types, accessibleProjectIds])
   handleExitFocusRef.current = handleExitFocus
 
   const handleExpandDepth = useCallback(() => {
@@ -1788,7 +1799,7 @@ function SchemaGraphInner({
           onClear={handleSearchClear}
           resultCount={nodes.length}
           totalCount={types.length}
-          offsetTop={layoutType === 'original' && initialFocusState ? true : false}
+          offsetTop={layoutType === 'original' && initialFocusState && !curatedActive ? true : false}
         />
       )}
       <ReactFlow
