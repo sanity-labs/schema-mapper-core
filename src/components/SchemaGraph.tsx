@@ -853,7 +853,7 @@ function GraphControls({
         ))}
       </div>
       {layout !== 'original' && (
-      <div className="grid grid-cols-[auto_1fr_auto] items-center gap-x-3 gap-y-2 px-1 mt-1 text-xs text-gray-500 dark:text-gray-400">
+      <div className="grid grid-cols-[auto_1fr_auto] items-center gap-x-3 gap-y-3 px-1 mt-2 text-xs text-gray-500 dark:text-gray-400">
         <span>Spacing</span>
         <input
           type="range"
@@ -928,6 +928,9 @@ interface SchemaGraphInnerProps {
   types: DiscoveredType[]
   initialPositions?: Record<string, { x: number; y: number }>
   initialEdgeStyle?: EdgeStyle
+  initialExpandObjects?: boolean
+  initialExpandArrays?: boolean
+  initialTransientExpanded?: string[]
   onStateChange?: (state: SchemaGraphState) => void
   fitViewTrigger?: number
   initialFocusState?: { typeName: string; depth: 0 | 1 | 2 }
@@ -969,6 +972,9 @@ function SchemaGraphInner({
   types,
   initialPositions,
   initialEdgeStyle,
+  initialExpandObjects,
+  initialExpandArrays,
+  initialTransientExpanded,
   onStateChange,
   fitViewTrigger,
   initialFocusState,
@@ -1073,6 +1079,54 @@ function SchemaGraphInner({
 
   const edgeStyleRef = useRef(edgeStyle)
   edgeStyleRef.current = edgeStyle
+
+  // Expand-mode state — controls whether nested object/array fields render
+  // inline (indented rows) vs collapsed to their parent row. Per-node
+  // transient overrides live in `transientExpanded` (field paths that have
+  // been individually toggled). See feature/expand-toggles for the full
+  // spec.
+  const [expandObjects, setExpandObjectsState] = useState<boolean>(() => {
+    if (initialExpandObjects !== undefined) return initialExpandObjects
+    try {
+      const saved = localStorage.getItem('schema-mapper:expandObjects')
+      if (saved !== null) return saved === 'true'
+    } catch {}
+    return false
+  })
+  const [expandArrays, setExpandArraysState] = useState<boolean>(() => {
+    if (initialExpandArrays !== undefined) return initialExpandArrays
+    try {
+      const saved = localStorage.getItem('schema-mapper:expandArrays')
+      if (saved !== null) return saved === 'true'
+    } catch {}
+    return false
+  })
+  const [transientExpanded, setTransientExpanded] = useState<string[]>(
+    () => initialTransientExpanded ?? [],
+  )
+
+  const setExpandObjects = useCallback((v: boolean) => {
+    setExpandObjectsState(v)
+    try {
+      localStorage.setItem('schema-mapper:expandObjects', String(v))
+    } catch {}
+    // Setting change is a "big change" — clear transient overrides.
+    setTransientExpanded([])
+  }, [])
+  const setExpandArrays = useCallback((v: boolean) => {
+    setExpandArraysState(v)
+    try {
+      localStorage.setItem('schema-mapper:expandArrays', String(v))
+    } catch {}
+    setTransientExpanded([])
+  }, [])
+
+  const expandObjectsRef = useRef(expandObjects)
+  expandObjectsRef.current = expandObjects
+  const expandArraysRef = useRef(expandArrays)
+  expandArraysRef.current = expandArrays
+  const transientExpandedRef = useRef(transientExpanded)
+  transientExpandedRef.current = transientExpanded
 
   // Stable ref for onCrossDatasetNavigate to avoid rebuild cascades
   const onCrossDatasetNavigateRef = useRef(onCrossDatasetNavigate)
@@ -1279,8 +1333,11 @@ function SchemaGraphInner({
       viewport: viewportRef.current,
       edgeStyle,
       spacing,
+      expandObjects,
+      expandArrays,
+      transientExpanded,
     })
-  }, [focusState, isSearching, nodes.length, onStateChange, edgeStyle, spacing])
+  }, [focusState, isSearching, nodes.length, onStateChange, edgeStyle, spacing, expandObjects, expandArrays, transientExpanded])
 
   const handleSearchChange = useCallback((query: string) => {
     setSearchQuery(query)
@@ -1834,7 +1891,7 @@ function SchemaGraphInner({
           cursor: pointer !important;
         }
       `}</style>
-      <GraphControls layout={layoutType} onLayoutChange={handleLayoutChange} edgeStyle={edgeStyle} onEdgeStyleChange={handleEdgeStyleChange} spacing={spacing} onSpacingChange={handleSpacingChange} onResetSpacing={handleResetSpacing} hasOriginalPositions={!!initialPositions && Object.keys(initialPositions).length > 0} disabled={isSearching} curatedActive={!!curatedActive} />
+      <GraphControls layout={layoutType} onLayoutChange={handleLayoutChange} edgeStyle={edgeStyle} onEdgeStyleChange={handleEdgeStyleChange} spacing={spacing} onSpacingChange={handleSpacingChange} onResetSpacing={handleResetSpacing} hasOriginalPositions={!!initialPositions && Object.keys(initialPositions).length > 0} disabled={isSearching} curatedActive={!!curatedActive} expandObjects={expandObjects} expandArrays={expandArrays} onExpandObjectsChange={setExpandObjects} onExpandArraysChange={setExpandArrays} />
       {isLayouting && (
         <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10 bg-white/90 dark:bg-gray-900/90 backdrop-blur-sm border rounded-md px-3 py-1 text-xs text-gray-500 dark:text-gray-400">
           Layouting…
@@ -1983,12 +2040,24 @@ export interface SchemaGraphState {
   edgeStyle?: 'bezier' | 'step' | 'straight'
   /** Current spacing multiplier — surfaced for curated-layout auto-save */
   spacing?: number
+  /** Whether objects render inline expanded (vs collapsed to parent row) */
+  expandObjects?: boolean
+  /** Whether arrays render inline expanded (vs collapsed to parent row) */
+  expandArrays?: boolean
+  /** Per-row transient overrides — field paths that have been toggled individually */
+  transientExpanded?: string[]
 }
 
 export interface SchemaGraphProps {
   types: DiscoveredType[]
   initialPositions?: Record<string, { x: number; y: number }>
   initialEdgeStyle?: 'bezier' | 'step' | 'straight'
+  /** Preload expand-objects toggle from persisted view/payload. Undefined = read localStorage default. */
+  initialExpandObjects?: boolean
+  /** Preload expand-arrays toggle from persisted view/payload. Undefined = read localStorage default. */
+  initialExpandArrays?: boolean
+  /** Preload per-row transient expansions (field paths). */
+  initialTransientExpanded?: string[]
   onStateChange?: (state: SchemaGraphState) => void
   /** Increment to trigger a smooth fitView (e.g. after container resize) */
   fitViewTrigger?: number
