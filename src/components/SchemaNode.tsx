@@ -37,6 +37,13 @@ export type SchemaNodeData = {
   onInaccessibleClick?: (projectName: string, datasetName: string) => void;
   accessibleProjectIds?: Set<string>;
   visibleTypeNames?: Set<string>;
+  /**
+   * Kind lookup for all types in the current view — used by FieldRow to color
+   * orphan-target lozenges according to the target's kind (amber for
+   * named-object targets, indigo/purple for documents). Populated by
+   * buildNodesAndEdges from the types array.
+   */
+  typeKinds?: Record<string, 'document' | 'object'>;
 };
 
 export type SchemaNodeType = Node<SchemaNodeData, 'schema'>;
@@ -230,6 +237,7 @@ function FieldRow({
   onInaccessibleClick,
   accessibleProjectIds,
   visibleTypeNames,
+  typeKinds,
   sourceTypeName,
   onMultiTargetOpenChange,
   indentLevel = 0,
@@ -248,6 +256,7 @@ function FieldRow({
   onInaccessibleClick?: (projectName: string, datasetName: string) => void;
   accessibleProjectIds?: Set<string>;
   visibleTypeNames?: Set<string>;
+  typeKinds?: Record<string, 'document' | 'object'>;
   sourceTypeName?: string;
   /** Notify parent SchemaNode when this row's multi-target lozenge expands,
    *  so the node can bump its z-index to render above sibling nodes. */
@@ -287,20 +296,6 @@ function FieldRow({
   const orphanedTargets = visibleTypeNames
     ? allTargets.filter(t => !visibleTypeNames.has(t))
     : [];
-  // eslint-disable-next-line no-console
-  if (field.isInlineObject && field.referenceTo && typeof window !== 'undefined') {
-    console.log('[FieldRow]', {
-      fieldName: field.name,
-      isInline: field.isInlineObject,
-      referenceTo: field.referenceTo,
-      isRef,
-      isRefLike,
-      allTargets,
-      visibleHas: visibleTypeNames ? visibleTypeNames.has(field.referenceTo!) : 'no-set',
-      orphanedTargets,
-      hasOnReferenceClick: !!onReferenceClick,
-    });
-  }
   // For row-level click: focus the first target by default
   const primaryTarget = allTargets[0];
 
@@ -403,20 +398,26 @@ function FieldRow({
       {orphanedTargets.length > 0 && onReferenceClick && (
         orphanedTargets.length <= 2 ? (
           <div className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-[calc(100%+8px)] z-10 flex items-center gap-1">
-            {orphanedTargets.map((target) => (
-              <button
-                key={target}
-                className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 text-[10px] font-medium border border-indigo-200 dark:border-indigo-700 hover:bg-indigo-200 dark:hover:bg-indigo-800/50 transition-colors whitespace-nowrap shadow-sm"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onReferenceClick(target);
-                }}
-                title={`Focus on ${target}`}
-              >
-                <ArrowRight className="w-2.5 h-2.5" />
-                {target}
-              </button>
-            ))}
+            {orphanedTargets.map((target) => {
+              const isObjectTarget = typeKinds?.[target] === 'object';
+              const pillClass = isObjectTarget
+                ? "flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300 text-[10px] font-medium border border-amber-200 dark:border-amber-700 hover:bg-amber-200 dark:hover:bg-amber-800/50 transition-colors whitespace-nowrap shadow-sm"
+                : "flex items-center gap-1 px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 text-[10px] font-medium border border-indigo-200 dark:border-indigo-700 hover:bg-indigo-200 dark:hover:bg-indigo-800/50 transition-colors whitespace-nowrap shadow-sm";
+              return (
+                <button
+                  key={target}
+                  className={pillClass}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onReferenceClick(target);
+                  }}
+                  title={`Focus on ${target}`}
+                >
+                  <ArrowRight className="w-2.5 h-2.5" />
+                  {target}
+                </button>
+              );
+            })}
           </div>
         ) : (
           <MultiTargetPopover
@@ -494,7 +495,7 @@ function FieldRow({
 // ---------------------------------------------------------------------------
 
 function SchemaNode({ data }: NodeProps<SchemaNodeType>) {
-  const { typeName, documentCount, fields, kind, onReferenceClick, onCrossDatasetNavigate, onMediaLibraryClick, onInaccessibleClick, accessibleProjectIds, visibleTypeNames } = data;
+  const { typeName, documentCount, fields, kind, onReferenceClick, onCrossDatasetNavigate, onMediaLibraryClick, onInaccessibleClick, accessibleProjectIds, visibleTypeNames, typeKinds } = data;
   const isObjectNode = kind === 'object';
   const expandCtx = useContext(ExpandContext);
   const expandObjects = expandCtx.expandObjects;
@@ -614,7 +615,12 @@ function SchemaNode({ data }: NodeProps<SchemaNodeType>) {
     if (!visibleTypeNames || !onReferenceClick) return false;
     return fields.some(f => {
       if (f.isCrossDatasetReference) return false;
-      if (!(f.isReference || f.type === 'reference')) return false;
+      // Include both real reference fields AND inline-object rows that point
+      // to a named object type — both render orphan lozenges when their
+      // target isn't on canvas.
+      const isRefRow = f.isReference || f.type === 'reference';
+      const isInlineRefRow = f.isInlineObject && !!f.referenceTo;
+      if (!isRefRow && !isInlineRefRow) return false;
       const targets = f.referenceTargets && f.referenceTargets.length > 0
         ? f.referenceTargets
         : (f.referenceTo ? [f.referenceTo] : []);
@@ -744,6 +750,7 @@ function SchemaNode({ data }: NodeProps<SchemaNodeType>) {
               onInaccessibleClick={onInaccessibleClick}
               accessibleProjectIds={accessibleProjectIds}
               visibleTypeNames={visibleTypeNames}
+              typeKinds={typeKinds}
               sourceTypeName={typeName}
               onMultiTargetOpenChange={handleMultiTargetOpenChange}
               indentLevel={depth}

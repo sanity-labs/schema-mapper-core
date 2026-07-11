@@ -653,6 +653,10 @@ function buildNodesAndEdges(
   edges: SchemaEdge[]
 } {
   const typeNames = new Set(types.map((t) => t.name))
+  // Kind lookup so orphan-lozenges can color themselves by target kind
+  // (amber for named-object targets, indigo/purple for document targets).
+  const typeKinds: Record<string, 'document' | 'object'> = {}
+  for (const t of types) typeKinds[t.name] = t.kind || 'document'
 
   const nodes: SchemaNode_RF[] = types.map((type, index) => ({
     id: type.name,
@@ -663,12 +667,17 @@ function buildNodesAndEdges(
       documentCount: type.documentCount,
       fields: type.fields,
       kind: type.kind,
+      typeKinds,
       ...extraNodeData,
       // Compute per-node: does this node have orphaned refs that add right margin?
       orphanedRefPadding: extraNodeData?.visibleTypeNames
         ? type.fields.some(f => {
             if (f.isCrossDatasetReference) return true
-            if (!(f.isReference || f.type === 'reference')) return false
+            // Include inline-object rows too — they render orphan lozenges
+            // now that the pivot puts named object types on their own nodes.
+            const isRefRow = f.isReference || f.type === 'reference'
+            const isInlineRefRow = f.isInlineObject && !!f.referenceTo
+            if (!isRefRow && !isInlineRefRow) return false
             const targets = f.referenceTargets && f.referenceTargets.length > 0
               ? f.referenceTargets
               : (f.referenceTo ? [f.referenceTo] : [])
