@@ -802,6 +802,10 @@ function GraphControls({
   hasOriginalPositions = false,
   disabled = false,
   curatedActive = false,
+  expandObjects = false,
+  expandArrays = false,
+  onExpandObjectsChange,
+  onExpandArraysChange,
 }: {
   layout: LayoutType
   onLayoutChange: (layout: LayoutType) => void
@@ -814,6 +818,10 @@ function GraphControls({
   disabled?: boolean
   /** When true, no algo tab is shown as selected — the app-level curated layout is in charge. */
   curatedActive?: boolean
+  expandObjects?: boolean
+  expandArrays?: boolean
+  onExpandObjectsChange?: (value: boolean) => void
+  onExpandArraysChange?: (value: boolean) => void
 }) {
   const layouts: LayoutType[] = hasOriginalPositions
     ? ['original', 'dagre', 'layered', 'force', 'stress']
@@ -845,7 +853,7 @@ function GraphControls({
         ))}
       </div>
       {layout !== 'original' && (
-      <div className="flex items-center gap-3 px-1">
+      <div className="flex items-center gap-3 px-1 pb-[5px]">
         <div className="flex items-center gap-2">
           <span className="text-xs text-gray-500 dark:text-gray-400">Spacing</span>
           <input
@@ -854,7 +862,7 @@ function GraphControls({
             max="500"
             value={Math.round(spacing * 100)}
             onChange={(e) => onSpacingChange(Number(e.target.value) / 100)}
-            className="w-20 h-1 accent-gray-700"
+            className="w-30 h-1 accent-gray-700"
           />
           <button
             onClick={onResetSpacing}
@@ -866,6 +874,27 @@ function GraphControls({
         </div>
       </div>
       )}
+      <div className="flex items-center gap-3 px-1 text-xs text-gray-500 dark:text-gray-400">
+        <span>Expand:</span>
+        <label className="flex items-center gap-1 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={expandObjects}
+            onChange={(e) => onExpandObjectsChange?.(e.target.checked)}
+            className="w-3 h-3 accent-gray-700 cursor-pointer"
+          />
+          <span>objects</span>
+        </label>
+        <label className="flex items-center gap-1 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={expandArrays}
+            onChange={(e) => onExpandArraysChange?.(e.target.checked)}
+            className="w-3 h-3 accent-gray-700 cursor-pointer"
+          />
+          <span>arrays</span>
+        </label>
+      </div>
     </div>
   )
 }
