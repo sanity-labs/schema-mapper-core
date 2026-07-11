@@ -332,7 +332,7 @@ function FieldRow({
       {/* Chevron for container stub rows */}
       {isContainer && (
         <span
-          className="shrink-0 text-base leading-none text-indigo-600 dark:text-indigo-400 select-none"
+          className="shrink-0 text-lg leading-none text-indigo-600 dark:text-indigo-400 select-none font-semibold"
           aria-hidden="true"
         >
           {isOpen ? '▾' : '▸'}
