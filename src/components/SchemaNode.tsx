@@ -268,11 +268,17 @@ function FieldRow({
   const isCrossDataset = field.isCrossDatasetReference === true;
   const isRef = !isCrossDataset && (field.isReference || field.type === 'reference');
   const isInline = field.isInlineObject === true;
+  // Inline object rows referencing a named object type behave like refs for
+  // navigation: clicking the row should focus the target, and out-of-focus
+  // targets should render as navigable orphan lozenges. This matters most
+  // for named-object arrays deep in a chain (e.g. plainThread.entries[] →
+  // plainEntry) where the target isn't on-canvas at shallow focus depths.
+  const isRefLike = isRef || (isInline && !!field.referenceTo);
   const style = fieldBadgeStyle(isInline ? 'object' : field.type);
   const even = index % 2 === 0;
 
   // All reference targets (handles multi-target refs)
-  const allTargets: string[] = isRef
+  const allTargets: string[] = isRefLike
     ? (field.referenceTargets && field.referenceTargets.length > 0
         ? field.referenceTargets
         : (field.referenceTo ? [field.referenceTo] : []))
@@ -290,7 +296,7 @@ function FieldRow({
         relative flex items-center gap-2 px-3 py-1.5 text-xs
         ${even ? 'bg-transparent' : 'bg-muted/40'}
         ${isRef || isContainer ? 'bg-indigo-50/60 dark:bg-indigo-950/20' : ''}
-        ${isRef && primaryTarget && onReferenceClick ? 'schema-clickable' : ''}
+        ${isRefLike && primaryTarget && onReferenceClick ? 'schema-clickable' : ''}
       `}
       data-field-name={field.name}
       data-field-type={field.type}
@@ -299,17 +305,17 @@ function FieldRow({
       data-field-is-array={field.isArray ? 'true' : undefined}
       data-field-ref-to={field.referenceTo || undefined}
       data-field-ref-targets={allTargets.length > 1 ? allTargets.join(',') : undefined}
-      onClick={isRef && primaryTarget && onReferenceClick ? (e: React.MouseEvent) => {
+      onClick={isRefLike && primaryTarget && onReferenceClick ? (e: React.MouseEvent) => {
         e.stopPropagation();
         onReferenceClick(primaryTarget);
       } : (isContainer && onToggleContainer ? (e: React.MouseEvent) => {
         e.stopPropagation();
         onToggleContainer();
       } : undefined)}
-      onMouseDown={isRef && primaryTarget && onReferenceClick ? (e: React.MouseEvent) => e.stopPropagation() : (isContainer && onToggleContainer ? (e: React.MouseEvent) => e.stopPropagation() : undefined)}
-      onPointerDown={isRef && primaryTarget && onReferenceClick ? (e: React.PointerEvent) => e.stopPropagation() : (isContainer && onToggleContainer ? (e: React.PointerEvent) => e.stopPropagation() : undefined)}
+      onMouseDown={isRefLike && primaryTarget && onReferenceClick ? (e: React.MouseEvent) => e.stopPropagation() : (isContainer && onToggleContainer ? (e: React.MouseEvent) => e.stopPropagation() : undefined)}
+      onPointerDown={isRefLike && primaryTarget && onReferenceClick ? (e: React.PointerEvent) => e.stopPropagation() : (isContainer && onToggleContainer ? (e: React.PointerEvent) => e.stopPropagation() : undefined)}
       style={{
-        ...(isRef && primaryTarget && onReferenceClick ? { cursor: 'pointer' } : {}),
+        ...(isRefLike && primaryTarget && onReferenceClick ? { cursor: 'pointer' } : {}),
         ...(isContainer && onToggleContainer ? { cursor: 'pointer' } : {}),
         ...(indentLevel > 0 ? { paddingLeft: `${12 + indentLevel * 24}px` } : {}),
       }}
