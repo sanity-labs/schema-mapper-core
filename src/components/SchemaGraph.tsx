@@ -653,10 +653,16 @@ function buildNodesAndEdges(
   edges: SchemaEdge[]
 } {
   const typeNames = new Set(types.map((t) => t.name))
-  // Kind lookup so orphan-lozenges can color themselves by target kind
-  // (amber for named-object targets, indigo/purple for document targets).
-  const typeKinds: Record<string, 'document' | 'object'> = {}
-  for (const t of types) typeKinds[t.name] = t.kind || 'document'
+  // Kind lookup for orphan-lozenge coloring. If caller passed a fuller map
+  // via extraNodeData.typeKinds (which they should, computed from the full
+  // types list — not just the filtered subset), we use that. Otherwise we
+  // fall back to what we can see in the local `types`.
+  const localTypeKinds: Record<string, 'document' | 'object'> = {}
+  for (const t of types) localTypeKinds[t.name] = t.kind || 'document'
+  const typeKinds: Record<string, 'document' | 'object'> = {
+    ...localTypeKinds,
+    ...(extraNodeData?.typeKinds || {}),
+  }
 
   const nodes: SchemaNode_RF[] = types.map((type, index) => ({
     id: type.name,
@@ -1090,6 +1096,16 @@ function SchemaGraphInner({
   const edgeStyleRef = useRef(edgeStyle)
   edgeStyleRef.current = edgeStyle
 
+  // Full-schema kind lookup so orphan lozenges color correctly even when
+  // the target isn't in the currently-rendered subset (focus mode). Built
+  // from the full types prop; passed into every buildNodesAndEdges call
+  // via extraNodeData.typeKinds.
+  const fullTypeKinds = useMemo(() => {
+    const map: Record<string, 'document' | 'object'> = {}
+    for (const t of types) map[t.name] = t.kind || 'document'
+    return map
+  }, [types])
+
   // Expand-mode state — controls whether nested object/array fields render
   // inline (indented rows) vs collapsed to their parent row. Per-node
   // transient overrides live in `transientExpanded` (field paths that have
@@ -1268,7 +1284,7 @@ function SchemaGraphInner({
   const preFocusEdgesRef = useRef<SchemaEdge[] | null>(null)
 
   const { nodes: initialNodes, edges: initialEdges } = useMemo(
-    () => buildNodesAndEdges(types, edgeStyleRef.current, { onCrossDatasetNavigate: onCrossDatasetNavigateRef.current, onMediaLibraryClick: onMediaLibraryClickRef.current, onInaccessibleClick: onInaccessibleClickRef.current, accessibleProjectIds }),
+    () => buildNodesAndEdges(types, edgeStyleRef.current, { onCrossDatasetNavigate: onCrossDatasetNavigateRef.current, onMediaLibraryClick: onMediaLibraryClickRef.current, onInaccessibleClick: onInaccessibleClickRef.current, accessibleProjectIds, typeKinds: fullTypeKinds }),
     [types],
   )
 
@@ -1332,6 +1348,7 @@ function SchemaGraphInner({
           onInaccessibleClick: onInaccessibleClickRef.current,
           accessibleProjectIds,
           visibleTypeNames: visibleNames,
+          typeKinds: fullTypeKinds,
         })
         setNodes(subsetNodes)
         setEdges(subsetEdges)
@@ -1342,7 +1359,7 @@ function SchemaGraphInner({
     }
 
     setFocusState(null)
-    const { nodes: newNodes, edges: newEdges } = buildNodesAndEdges(types, edgeStyleRef.current, { onCrossDatasetNavigate: onCrossDatasetNavigateRef.current, onMediaLibraryClick: onMediaLibraryClickRef.current, onInaccessibleClick: onInaccessibleClickRef.current, accessibleProjectIds })
+    const { nodes: newNodes, edges: newEdges } = buildNodesAndEdges(types, edgeStyleRef.current, { onCrossDatasetNavigate: onCrossDatasetNavigateRef.current, onMediaLibraryClick: onMediaLibraryClickRef.current, onInaccessibleClick: onInaccessibleClickRef.current, accessibleProjectIds, typeKinds: fullTypeKinds })
     setNodes(newNodes)
     setEdges(newEdges)
     setLayoutApplied(false)
@@ -1390,7 +1407,7 @@ function SchemaGraphInner({
     if (!query.trim()) {
       // Restore full graph with user's layout
       searchLayoutOverrideRef.current = null
-      const { nodes: newNodes, edges: newEdges } = buildNodesAndEdges(types, edgeStyleRef.current, { onCrossDatasetNavigate: onCrossDatasetNavigateRef.current, onMediaLibraryClick: onMediaLibraryClickRef.current, onInaccessibleClick: onInaccessibleClickRef.current, accessibleProjectIds })
+      const { nodes: newNodes, edges: newEdges } = buildNodesAndEdges(types, edgeStyleRef.current, { onCrossDatasetNavigate: onCrossDatasetNavigateRef.current, onMediaLibraryClick: onMediaLibraryClickRef.current, onInaccessibleClick: onInaccessibleClickRef.current, accessibleProjectIds, typeKinds: fullTypeKinds })
       setNodes(newNodes)
       setEdges(newEdges)
       setLayoutApplied(false)
@@ -1402,7 +1419,7 @@ function SchemaGraphInner({
       (t.title && t.title.toLowerCase().includes(q)) ||
       t.fields.some(f => f.name.toLowerCase().includes(q))
     )
-    const { nodes: subsetNodes, edges: subsetEdges } = buildNodesAndEdges(filtered, edgeStyleRef.current, { onCrossDatasetNavigate: onCrossDatasetNavigateRef.current, onMediaLibraryClick: onMediaLibraryClickRef.current, onInaccessibleClick: onInaccessibleClickRef.current, accessibleProjectIds })
+    const { nodes: subsetNodes, edges: subsetEdges } = buildNodesAndEdges(filtered, edgeStyleRef.current, { onCrossDatasetNavigate: onCrossDatasetNavigateRef.current, onMediaLibraryClick: onMediaLibraryClickRef.current, onInaccessibleClick: onInaccessibleClickRef.current, accessibleProjectIds, typeKinds: fullTypeKinds })
     setNodes(subsetNodes)
     setEdges(subsetEdges)
     // Force layered layout with default spacing for search results
@@ -1413,7 +1430,7 @@ function SchemaGraphInner({
   const handleSearchClear = useCallback(() => {
     setSearchQuery('')
     searchLayoutOverrideRef.current = null
-    const { nodes: newNodes, edges: newEdges } = buildNodesAndEdges(types, edgeStyleRef.current, { onCrossDatasetNavigate: onCrossDatasetNavigateRef.current, onMediaLibraryClick: onMediaLibraryClickRef.current, onInaccessibleClick: onInaccessibleClickRef.current, accessibleProjectIds })
+    const { nodes: newNodes, edges: newEdges } = buildNodesAndEdges(types, edgeStyleRef.current, { onCrossDatasetNavigate: onCrossDatasetNavigateRef.current, onMediaLibraryClick: onMediaLibraryClickRef.current, onInaccessibleClick: onInaccessibleClickRef.current, accessibleProjectIds, typeKinds: fullTypeKinds })
     setNodes(newNodes)
     setEdges(newEdges)
     setLayoutApplied(false)
@@ -1722,7 +1739,7 @@ function SchemaGraphInner({
       setEdgeStyle(initialEdgeStyle)
       edgeStyleRef.current = initialEdgeStyle
       // Rebuild edges with the restored style so they render correctly
-      const { nodes: rebuiltNodes, edges: rebuiltEdges } = buildNodesAndEdges(types, initialEdgeStyle, { onCrossDatasetNavigate: onCrossDatasetNavigateRef.current, onMediaLibraryClick: onMediaLibraryClickRef.current, onInaccessibleClick: onInaccessibleClickRef.current, accessibleProjectIds })
+      const { nodes: rebuiltNodes, edges: rebuiltEdges } = buildNodesAndEdges(types, initialEdgeStyle, { onCrossDatasetNavigate: onCrossDatasetNavigateRef.current, onMediaLibraryClick: onMediaLibraryClickRef.current, onInaccessibleClick: onInaccessibleClickRef.current, accessibleProjectIds, typeKinds: fullTypeKinds })
       setNodes(rebuiltNodes)
       setEdges(rebuiltEdges)
       applyLayout(rebuiltNodes, rebuiltEdges, newLayout, spacingMap[newLayout])
@@ -1731,7 +1748,7 @@ function SchemaGraphInner({
     // When switching away from original+initialFocusState, rebuild full graph
     // BUT only if user hasn't manually focused a type (focusState is active user focus)
     if (newLayout !== 'original' && initialFocusState && !focusState) {
-      const { nodes: fullNodes, edges: fullEdges } = buildNodesAndEdges(types, edgeStyleRef.current, { onCrossDatasetNavigate: onCrossDatasetNavigateRef.current, onMediaLibraryClick: onMediaLibraryClickRef.current, onInaccessibleClick: onInaccessibleClickRef.current, accessibleProjectIds })
+      const { nodes: fullNodes, edges: fullEdges } = buildNodesAndEdges(types, edgeStyleRef.current, { onCrossDatasetNavigate: onCrossDatasetNavigateRef.current, onMediaLibraryClick: onMediaLibraryClickRef.current, onInaccessibleClick: onInaccessibleClickRef.current, accessibleProjectIds, typeKinds: fullTypeKinds })
       setNodes(fullNodes)
       setEdges(fullEdges)
       applyLayout(fullNodes, fullEdges, newLayout, spacingMap[newLayout])
@@ -1764,7 +1781,7 @@ function SchemaGraphInner({
     if (searchQuery.trim()) {
       setSearchQuery('')
       searchLayoutOverrideRef.current = null
-      const { nodes: fullNodes, edges: fullEdges } = buildNodesAndEdges(types, edgeStyleRef.current, { onCrossDatasetNavigate: onCrossDatasetNavigateRef.current, onMediaLibraryClick: onMediaLibraryClickRef.current, onInaccessibleClick: onInaccessibleClickRef.current, accessibleProjectIds })
+      const { nodes: fullNodes, edges: fullEdges } = buildNodesAndEdges(types, edgeStyleRef.current, { onCrossDatasetNavigate: onCrossDatasetNavigateRef.current, onMediaLibraryClick: onMediaLibraryClickRef.current, onInaccessibleClick: onInaccessibleClickRef.current, accessibleProjectIds, typeKinds: fullTypeKinds })
       preFocusNodesRef.current = fullNodes
       preFocusEdgesRef.current = fullEdges as SchemaEdge[]
     } else if (!focusState) {
@@ -1800,6 +1817,7 @@ function SchemaGraphInner({
       onInaccessibleClick: onInaccessibleClickRef.current,
       accessibleProjectIds,
       visibleTypeNames: visibleNames,
+          typeKinds: fullTypeKinds,
     })
 
     setNodes(subsetNodes)
