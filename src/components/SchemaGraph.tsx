@@ -853,7 +853,7 @@ function GraphControls({
         ))}
       </div>
       {layout !== 'original' && (
-      <div className="grid grid-cols-[auto_1fr_auto] items-center gap-x-3 gap-y-2 px-1 text-xs text-gray-500 dark:text-gray-400">
+      <div className="grid grid-cols-[auto_1fr_auto] items-center gap-x-3 gap-y-2 px-1 mt-1 text-xs text-gray-500 dark:text-gray-400">
         <span>Spacing</span>
         <input
           type="range"
@@ -894,7 +894,7 @@ function GraphControls({
       </div>
       )}
       {layout === 'original' && (
-      <div className="flex items-center gap-3 px-1 text-xs text-gray-500 dark:text-gray-400">
+      <div className="flex items-center gap-3 px-1 mt-1 text-xs text-gray-500 dark:text-gray-400">
         <span>Expand</span>
         <label className="flex items-center gap-1 cursor-pointer select-none">
           <input
