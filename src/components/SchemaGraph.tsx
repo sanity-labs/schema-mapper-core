@@ -27,7 +27,7 @@ import { TbFocus2, TbArrowsMaximize } from 'react-icons/tb'
 // GrContract/GrExpand removed — FocusBar now uses TbFocus2/TbArrowsMaximize to match context menu
 import { GoArrowLeft } from 'react-icons/go'
 import { useDarkMode } from '../hooks/useDarkMode'
-import SchemaNode, { SCHEMA_NODE_TYPE, type SchemaNodeData } from './SchemaNode'
+import SchemaNode, { SCHEMA_NODE_TYPE, type SchemaNodeData, ExpandContext } from './SchemaNode'
 import FloatingEdge from './FloatingEdge'
 import type { DiscoveredField, DiscoveredType } from '../types'
 
@@ -1128,6 +1128,34 @@ function SchemaGraphInner({
   const transientExpandedRef = useRef(transientExpanded)
   transientExpandedRef.current = transientExpanded
 
+  // Toggle a transient container expansion. Keys are `${typeName}::${fieldPath}`
+  // so identically-named fields in different types don't collide. Toggling
+  // adds the key if absent, removes it if present.
+  const handleToggleTransient = useCallback((typeName: string, fieldPath: string) => {
+    const key = `${typeName}::${fieldPath}`
+    setTransientExpanded((prev) => {
+      if (prev.includes(key)) return prev.filter((k) => k !== key)
+      return [...prev, key]
+    })
+  }, [])
+
+  // Stable Set instance for context — recomputed only when the underlying
+  // array changes. Prevents re-renders in every SchemaNode on unrelated state.
+  const transientExpandedSet = useMemo(
+    () => new Set(transientExpanded),
+    [transientExpanded],
+  )
+
+  const expandContextValue = useMemo<React.ContextType<typeof ExpandContext>>(
+    () => ({
+      expandObjects,
+      expandArrays,
+      transientExpanded: transientExpandedSet,
+      onToggleTransient: handleToggleTransient,
+    }),
+    [expandObjects, expandArrays, transientExpandedSet, handleToggleTransient],
+  )
+
   // Stable ref for onCrossDatasetNavigate to avoid rebuild cascades
   const onCrossDatasetNavigateRef = useRef(onCrossDatasetNavigate)
   onCrossDatasetNavigateRef.current = onCrossDatasetNavigate
@@ -1859,6 +1887,7 @@ function SchemaGraphInner({
   }, [focusState, handleExitFocus])
 
   return (
+    <ExpandContext.Provider value={expandContextValue}>
     <div ref={containerRef} className={`relative w-full h-full ${curatedActive && !curatedEditable && !curatedReadOnly ? 'schema-graph-locked' : ''} ${curatedActive && curatedReadOnly ? 'schema-graph-readonly' : ''}`}>
       <style>{`
         /* Locked curated layout: node body shows the "no-touch" cursor,
@@ -2023,6 +2052,7 @@ function SchemaGraphInner({
         />
       )}
     </div>
+    </ExpandContext.Provider>
   )
 }
 

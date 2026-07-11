@@ -2,7 +2,7 @@ import { Handle, Position, type NodeProps, type Node } from '@xyflow/react';
 import { Badge } from './ui/badge';
 import { ArrowRight } from 'lucide-react';
 import { GoDatabase, GoImage, GoLock } from 'react-icons/go';
-import React, { memo, useMemo, useState, useEffect, useRef } from 'react';
+import React, { memo, useMemo, useState, useEffect, useRef, useCallback, useContext } from 'react';
 import { Tooltip, Box, Text } from '@sanity/ui';
 import type { DiscoveredField } from '../types';
 
@@ -34,6 +34,25 @@ export type SchemaNodeData = {
 };
 
 export type SchemaNodeType = Node<SchemaNodeData, 'schema'>;
+
+/**
+ * Context surfaced by SchemaGraph so every SchemaNode can read the current
+ * expand-mode state without threading it through node.data (which would
+ * require rebuilding nodes on every toggle). Nodes re-render when context
+ * value changes.
+ */
+export type ExpandContextValue = {
+  expandObjects: boolean;
+  expandArrays: boolean;
+  transientExpanded: Set<string>;
+  onToggleTransient?: (typeName: string, fieldPath: string) => void;
+};
+
+export const ExpandContext = React.createContext<ExpandContextValue>({
+  expandObjects: false,
+  expandArrays: false,
+  transientExpanded: new Set(),
+});
 
 // ---------------------------------------------------------------------------
 // Helpers — field type → badge style
@@ -207,6 +226,11 @@ function FieldRow({
   visibleTypeNames,
   sourceTypeName,
   onMultiTargetOpenChange,
+  indentLevel = 0,
+  isContainer = false,
+  isOpen = false,
+  onToggleContainer,
+  hiddenChildRefs,
 }: {
   field: DiscoveredField;
   index: number;
@@ -222,6 +246,18 @@ function FieldRow({
   /** Notify parent SchemaNode when this row's multi-target lozenge expands,
    *  so the node can bump its z-index to render above sibling nodes. */
   onMultiTargetOpenChange?: (fieldName: string, open: boolean) => void;
+  /** Indentation level (0 = top-level). Each level indents by ~4 chars worth. */
+  indentLevel?: number;
+  /** True if this row is a container stub (object/array parent). */
+  isContainer?: boolean;
+  /** For container stub rows: whether the children are currently rendered. */
+  isOpen?: boolean;
+  /** Called when the user clicks the chevron on a container stub row. */
+  onToggleContainer?: () => void;
+  /** For container stub rows: names of hidden child ref fields whose
+   *  source handles should render invisibly at this row's position so
+   *  edges can still connect. */
+  hiddenChildRefs?: string[];
 }) {
   const isCrossDataset = field.isCrossDatasetReference === true;
   const isRef = !isCrossDataset && (field.isReference || field.type === 'reference');
@@ -260,17 +296,39 @@ function FieldRow({
       onClick={isRef && primaryTarget && onReferenceClick ? (e: React.MouseEvent) => {
         e.stopPropagation();
         onReferenceClick(primaryTarget);
-      } : undefined}
-      onMouseDown={isRef && primaryTarget && onReferenceClick ? (e: React.MouseEvent) => e.stopPropagation() : undefined}
-      onPointerDown={isRef && primaryTarget && onReferenceClick ? (e: React.PointerEvent) => e.stopPropagation() : undefined}
-      style={isRef && primaryTarget && onReferenceClick ? { cursor: 'pointer' } : undefined}
+      } : (isContainer && onToggleContainer ? (e: React.MouseEvent) => {
+        e.stopPropagation();
+        onToggleContainer();
+      } : undefined)}
+      onMouseDown={isRef && primaryTarget && onReferenceClick ? (e: React.MouseEvent) => e.stopPropagation() : (isContainer && onToggleContainer ? (e: React.MouseEvent) => e.stopPropagation() : undefined)}
+      onPointerDown={isRef && primaryTarget && onReferenceClick ? (e: React.PointerEvent) => e.stopPropagation() : (isContainer && onToggleContainer ? (e: React.PointerEvent) => e.stopPropagation() : undefined)}
+      style={{
+        ...(isRef && primaryTarget && onReferenceClick ? { cursor: 'pointer' } : {}),
+        ...(isContainer && onToggleContainer ? { cursor: 'pointer' } : {}),
+        ...(indentLevel > 0 ? { paddingLeft: `${12 + indentLevel * 14}px` } : {}),
+      }}
     >
-      {/* Field name */}
+      {/* Chevron for container stub rows */}
+      {isContainer && (
+        <span className="shrink-0 text-muted-foreground select-none" aria-hidden="true">
+          {isOpen ? '▾' : '▸'}
+        </span>
+      )}
+
+      {/* Field name — indented rows show last path segment; container arrays get [] suffix */}
       <span
         className={`truncate font-mono ${isRef || isInline ? 'font-medium text-indigo-700 dark:text-indigo-300' : 'text-card-foreground'}`}
         title={field.name}
       >
-        {field.name}
+        {indentLevel > 0 || isContainer
+          ? (() => {
+              const segments = field.name.split('.');
+              const last = segments[segments.length - 1];
+              // Array containers: strip trailing [] on the segment and let the
+              // badge convey array-ness. Cleaner display in the row.
+              return last.endsWith('[]') ? last.slice(0, -2) : last;
+            })()
+          : field.name}
       </span>
 
       {/* Type badge */}
@@ -293,6 +351,20 @@ function FieldRow({
           className="!absolute !right-0 !top-1/2 !-translate-y-1/2 !translate-x-1/2 !w-[1px] !h-[1px] !border-0 !bg-transparent !min-w-0 !min-h-0"
         />
       )}
+
+      {/* Fallback source handles for hidden children — when a container is
+          collapsed, the collapsed children's ref handles need to exist SOMEWHERE
+          in the DOM so React Flow can attach edges. We stash them at this
+          container row's right edge, invisible. */}
+      {isContainer && !isOpen && hiddenChildRefs && hiddenChildRefs.map((childName) => (
+        <Handle
+          key={childName}
+          type="source"
+          position={Position.Right}
+          id={`ref-${childName}`}
+          className="!absolute !right-0 !top-1/2 !-translate-y-1/2 !translate-x-1/2 !w-[1px] !h-[1px] !border-0 !bg-transparent !min-w-0 !min-h-0"
+        />
+      ))}
 
       {/* Orphaned reference lozenge(s) — target types not on the current canvas.
           ≤2 orphans: render inline.
@@ -394,6 +466,96 @@ function FieldRow({
 
 function SchemaNode({ data }: NodeProps<SchemaNodeType>) {
   const { typeName, documentCount, fields, onReferenceClick, onCrossDatasetNavigate, onMediaLibraryClick, onInaccessibleClick, accessibleProjectIds, visibleTypeNames } = data;
+  const expandCtx = useContext(ExpandContext);
+  const expandObjects = expandCtx.expandObjects;
+  const expandArrays = expandCtx.expandArrays;
+  // Transient overrides use composite keys `${typeName}::${fieldPath}` so
+  // fields with the same name in different types don't collide.
+  const isFieldOverridden = useCallback(
+    (fieldPath: string) => expandCtx.transientExpanded.has(`${typeName}::${fieldPath}`),
+    [expandCtx.transientExpanded, typeName],
+  );
+  const onToggleTransient = expandCtx.onToggleTransient
+    ? (fieldPath: string) => expandCtx.onToggleTransient!(typeName, fieldPath)
+    : undefined;
+
+  // Compute which container paths are "open" (children rendered).
+  // A container is open when:
+  //   1. its global flag is on (expandObjects for object containers,
+  //      expandArrays for array containers), AND user hasn't overridden it OFF
+  //   OR
+  //   2. its global flag is off but user has overridden it ON via chevron
+  // The transientExpanded set holds paths that DIFFER from the default —
+  // so it's a XOR against the container's default.
+  const openPaths = useMemo(() => {
+    const open = new Set<string>();
+    for (const f of fields) {
+      if (!f.containerKind) continue;
+      const defaultOpen =
+        f.containerKind === 'object' ? !!expandObjects : !!expandArrays;
+      const overridden = isFieldOverridden(f.name);
+      // Default-open XOR override → open. Default-closed XOR override → open when override present.
+      const isOpen = defaultOpen !== overridden;
+      if (isOpen) open.add(f.name);
+    }
+    return open;
+  }, [fields, expandObjects, expandArrays, isFieldOverridden]);
+
+  // A field is visible if either it's top-level (no parentPath) OR every
+  // ancestor container in its parentPath is open. Ancestors are derived
+  // from the parentPath by walking the dot/[] segments.
+  const isFieldVisible = useCallback(
+    (f: DiscoveredField): boolean => {
+      if (!f.parentPath) return true;
+      // Walk each ancestor segment. Field parent path like "modules[].item"
+      // means we need both "modules[]" and "modules[].item" to be open.
+      const parts = f.parentPath.split('.');
+      let acc = '';
+      for (const part of parts) {
+        acc = acc ? `${acc}.${part}` : part;
+        if (!openPaths.has(acc)) return false;
+      }
+      return true;
+    },
+    [openPaths],
+  );
+
+  const visibleFields = useMemo(() => fields.filter(isFieldVisible), [fields, isFieldVisible]);
+
+  // For hidden ref/inline fields, we still need to render their source
+  // handles so React Flow can draw edges. We stash them under the nearest
+  // ANCESTOR that IS visible (the closest collapsed container in the chain).
+  const hiddenRefHandles = useMemo(() => {
+    // Map: container field name → array of hidden ref field names whose
+    // handles should render at that container's row position.
+    const map = new Map<string, string[]>();
+    for (const f of fields) {
+      if (!f.parentPath) continue;
+      if (isFieldVisible(f)) continue;
+      // Only ref-bearing fields need handles.
+      if (!(f.isReference || f.isInlineObject || f.isCrossDatasetReference || f.type === 'reference')) continue;
+      // Find the nearest ancestor container that's visible (either it's
+      // top-level, or all ITS ancestors are open).
+      const parts = f.parentPath.split('.');
+      let container: string | null = null;
+      let acc = '';
+      for (const part of parts) {
+        acc = acc ? `${acc}.${part}` : part;
+        // Is this container visible?
+        const containerField = fields.find(x => x.name === acc);
+        if (!containerField) continue;
+        if (isFieldVisible(containerField)) {
+          container = acc;
+          break;
+        }
+      }
+      if (!container) continue;
+      const list = map.get(container) ?? [];
+      list.push(f.name);
+      map.set(container, list);
+    }
+    return map;
+  }, [fields, isFieldVisible]);
 
   // Pre-compute reference indices for handle positioning
   const refFields = useMemo(
@@ -509,23 +671,33 @@ function SchemaNode({ data }: NodeProps<SchemaNodeType>) {
             No fields discovered
           </div>
         )}
-        {fields.map((field, i) => (
-          <FieldRow
-            key={field.name}
-            field={field}
-            index={i}
-            totalRefs={totalRefs}
-            refIndex={refFields[field.name] ?? -1}
-            onReferenceClick={onReferenceClick}
-            onCrossDatasetNavigate={onCrossDatasetNavigate}
-            onMediaLibraryClick={onMediaLibraryClick}
-            onInaccessibleClick={onInaccessibleClick}
-            accessibleProjectIds={accessibleProjectIds}
-            visibleTypeNames={visibleTypeNames}
-            sourceTypeName={typeName}
-            onMultiTargetOpenChange={handleMultiTargetOpenChange}
-          />
-        ))}
+        {visibleFields.map((field, i) => {
+          const depth = field.parentPath ? field.parentPath.split('.').length : 0;
+          const isContainer = !!field.containerKind;
+          const containerOpen = isContainer ? openPaths.has(field.name) : false;
+          return (
+            <FieldRow
+              key={field.name}
+              field={field}
+              index={i}
+              totalRefs={totalRefs}
+              refIndex={refFields[field.name] ?? -1}
+              onReferenceClick={onReferenceClick}
+              onCrossDatasetNavigate={onCrossDatasetNavigate}
+              onMediaLibraryClick={onMediaLibraryClick}
+              onInaccessibleClick={onInaccessibleClick}
+              accessibleProjectIds={accessibleProjectIds}
+              visibleTypeNames={visibleTypeNames}
+              sourceTypeName={typeName}
+              onMultiTargetOpenChange={handleMultiTargetOpenChange}
+              indentLevel={depth}
+              isContainer={isContainer}
+              isOpen={containerOpen}
+              onToggleContainer={isContainer && onToggleTransient ? () => onToggleTransient(field.name) : undefined}
+              hiddenChildRefs={isContainer && !containerOpen ? hiddenRefHandles.get(field.name) : undefined}
+            />
+          );
+        })}
       </div>
     </div>
   );
