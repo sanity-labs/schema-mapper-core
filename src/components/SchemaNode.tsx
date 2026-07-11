@@ -305,13 +305,13 @@ function FieldRow({
       style={{
         ...(isRef && primaryTarget && onReferenceClick ? { cursor: 'pointer' } : {}),
         ...(isContainer && onToggleContainer ? { cursor: 'pointer' } : {}),
-        ...(indentLevel > 0 ? { paddingLeft: `${12 + indentLevel * 14}px` } : {}),
+        ...(indentLevel > 0 ? { paddingLeft: `${12 + indentLevel * 24}px` } : {}),
       }}
     >
       {/* Chevron for container stub rows */}
       {isContainer && (
         <span
-          className="shrink-0 text-sm leading-none text-muted-foreground select-none"
+          className="shrink-0 text-base leading-none text-indigo-600 dark:text-indigo-400 select-none"
           aria-hidden="true"
         >
           {isOpen ? '▾' : '▸'}
