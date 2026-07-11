@@ -96,6 +96,8 @@ function fieldBadgeStyle(type: DiscoveredField['type']): BadgeStyle {
     case 'object':
     case 'block':
       return { className: 'bg-amber-100 text-amber-700 hover:bg-amber-100 border-amber-200 dark:bg-amber-900/50 dark:text-amber-300 dark:border-amber-800', variant: 'secondary' };
+    case 'portableText':
+      return { className: 'bg-rose-100 text-rose-700 hover:bg-rose-100 border-rose-200 dark:bg-rose-900/50 dark:text-rose-300 dark:border-rose-800', variant: 'secondary' };
     case 'url':
       return { className: 'bg-cyan-100 text-cyan-700 hover:bg-cyan-100 border-cyan-200 dark:bg-cyan-900/50 dark:text-cyan-300 dark:border-cyan-800', variant: 'secondary' };
     case 'unknown':
@@ -375,7 +377,7 @@ function FieldRow({
         title={isRef && allTargets.length > 1 ? `Accepts: ${allTargets.join(', ')}` : undefined}
       >
         {isRef && <ArrowRight className="mr-0.5 h-2.5 w-2.5" />}
-        {isInline ? field.referenceTo : field.type}
+        {isInline ? field.referenceTo : field.type === 'portableText' ? 'portable text' : field.type}
         {field.isArray && '[]'}
       </Badge>
 
