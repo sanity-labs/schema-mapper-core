@@ -326,13 +326,14 @@ function FieldRow({
       style={{
         ...(isRefLike && primaryTarget && onReferenceClick ? { cursor: 'pointer' } : {}),
         ...(isContainer && onToggleContainer ? { cursor: 'pointer' } : {}),
-        ...(indentLevel > 0 ? { paddingLeft: `${12 + indentLevel * 24}px` } : {}),
+        ...(indentLevel > 0 ? { paddingLeft: `${12 + indentLevel * 18}px` } : {}),
       }}
     >
       {/* Chevron for container stub rows */}
       {isContainer && (
         <span
-          className="shrink-0 text-lg leading-none text-indigo-600 dark:text-indigo-400 select-none font-semibold"
+          className="shrink-0 text-xl leading-[0.75] text-indigo-600 dark:text-indigo-400 select-none font-semibold flex items-center"
+          style={{ transform: 'translateY(1px)' }}
           aria-hidden="true"
         >
           {isOpen ? '▾' : '▸'}
