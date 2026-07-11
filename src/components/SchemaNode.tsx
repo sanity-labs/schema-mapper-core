@@ -285,7 +285,11 @@ function FieldRow({
   // for named-object arrays deep in a chain (e.g. plainThread.entries[] →
   // plainEntry) where the target isn't on-canvas at shallow focus depths.
   const isRefLike = isRef || (isInline && !!field.referenceTo);
-  const style = fieldBadgeStyle(isInline ? 'object' : field.type);
+  // Portable text takes precedence over inline-object for badge styling —
+  // we set isInlineObject: true on PT rows only to enable orphan-lozenge
+  // + edge plumbing to embedded named types, not to relabel the badge.
+  const isPortableText = field.type === 'portableText';
+  const style = fieldBadgeStyle(isPortableText ? 'portableText' : (isInline ? 'object' : field.type));
   const even = index % 2 === 0;
 
   // All reference targets (handles multi-target refs)
@@ -334,8 +338,8 @@ function FieldRow({
       {/* Chevron for container stub rows */}
       {isContainer && (
         <span
-          className="shrink-0 text-xl leading-[0.75] text-indigo-600 dark:text-indigo-400 select-none font-semibold flex items-center"
-          style={{ transform: 'translateY(1px)' }}
+          className="shrink-0 text-xl text-indigo-600 dark:text-indigo-400 select-none font-semibold flex items-center"
+          style={{ lineHeight: 0, transform: 'translateY(-1px)' }}
           aria-hidden="true"
         >
           {isOpen ? '▾' : '▸'}
@@ -377,7 +381,7 @@ function FieldRow({
         title={isRef && allTargets.length > 1 ? `Accepts: ${allTargets.join(', ')}` : undefined}
       >
         {isRef && <ArrowRight className="mr-0.5 h-2.5 w-2.5" />}
-        {isInline ? field.referenceTo : field.type === 'portableText' ? 'portable text' : field.type}
+        {isPortableText ? 'portable text' : isInline ? field.referenceTo : field.type}
         {field.isArray && '[]'}
       </Badge>
 
