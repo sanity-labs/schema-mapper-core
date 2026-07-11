@@ -339,6 +339,18 @@ function FieldRow({
         </span>
       )}
 
+      {/* Nested-row indicator: leaves and non-container rows inside a
+          container get a subtle ↳ prefix to signal ownership. Containers
+          themselves already have the chevron. */}
+      {indentLevel > 0 && !isContainer && (
+        <span
+          className="shrink-0 text-gray-400 dark:text-gray-600 select-none font-mono text-sm leading-none"
+          aria-hidden="true"
+        >
+          ↳
+        </span>
+      )}
+
       {/* Field name — indented rows show last path segment; container arrays get [] stripped */}
       <span
         className={`flex-1 min-w-0 truncate text-left font-mono ${isRef || isInline ? 'font-medium text-indigo-700 dark:text-indigo-300' : isContainer ? 'font-medium text-indigo-700 dark:text-indigo-300' : 'text-card-foreground'}`}
