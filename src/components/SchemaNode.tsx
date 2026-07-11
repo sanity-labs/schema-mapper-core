@@ -22,6 +22,12 @@ export type SchemaNodeData = {
   typeName: string;
   documentCount: number;
   fields: DiscoveredField[];
+  /**
+   * Whether this node represents a document type (default) or a named
+   * object type. Object nodes use a different border tone + header pill
+   * and don't show a document count.
+   */
+  kind?: 'document' | 'object';
   hasIncoming?: boolean;
   hasOutgoing?: boolean;
   incomingEdgeCount?: number;
@@ -468,7 +474,8 @@ function FieldRow({
 // ---------------------------------------------------------------------------
 
 function SchemaNode({ data }: NodeProps<SchemaNodeType>) {
-  const { typeName, documentCount, fields, onReferenceClick, onCrossDatasetNavigate, onMediaLibraryClick, onInaccessibleClick, accessibleProjectIds, visibleTypeNames } = data;
+  const { typeName, documentCount, fields, kind, onReferenceClick, onCrossDatasetNavigate, onMediaLibraryClick, onInaccessibleClick, accessibleProjectIds, visibleTypeNames } = data;
+  const isObjectNode = kind === 'object';
   const expandCtx = useContext(ExpandContext);
   const expandObjects = expandCtx.expandObjects;
   const expandArrays = expandCtx.expandArrays;
@@ -620,7 +627,11 @@ function SchemaNode({ data }: NodeProps<SchemaNodeType>) {
 
   return (
     <div
-      className={"rounded-md border bg-card text-card-foreground min-w-[200px] max-w-[280px]" + (hasOrphanedRefs || hasCrossDatasetRefs ? " mr-[130px]" : "")}
+      className={
+        "rounded-md border bg-card text-card-foreground min-w-[200px] max-w-[280px]" +
+        (isObjectNode ? " border-amber-300 dark:border-amber-700" : "") +
+        (hasOrphanedRefs || hasCrossDatasetRefs ? " mr-[130px]" : "")
+      }
       style={{
         overflow: hasOrphanedRefs || hasCrossDatasetRefs ? 'visible' : 'hidden',
         position: 'relative',
@@ -662,16 +673,30 @@ function SchemaNode({ data }: NodeProps<SchemaNodeType>) {
       />
 
       {/* ---- Header ---- */}
-      <div className="flex items-center justify-between gap-2 border-b bg-muted/70 px-3 py-2">
+      <div
+        className={
+          "flex items-center justify-between gap-2 border-b px-3 py-2 " +
+          (isObjectNode ? "bg-amber-50 dark:bg-amber-950/30" : "bg-muted/70")
+        }
+      >
         <span className="truncate text-sm font-medium" title={typeName}>
           {typeName}
         </span>
-        <Badge
-          variant="secondary"
-          className="shrink-0 tabular-nums text-[10px] px-1.5 py-0 leading-4 bg-white text-black dark:bg-gray-800 dark:text-gray-200"
-        >
-          {documentCount.toLocaleString()}
-        </Badge>
+        {isObjectNode ? (
+          <Badge
+            variant="secondary"
+            className="shrink-0 text-[10px] px-1.5 py-0 leading-4 bg-amber-100 text-amber-900 dark:bg-amber-900/50 dark:text-amber-100 font-normal"
+          >
+            OBJECT
+          </Badge>
+        ) : (
+          <Badge
+            variant="secondary"
+            className="shrink-0 tabular-nums text-[10px] px-1.5 py-0 leading-4 bg-white text-black dark:bg-gray-800 dark:text-gray-200"
+          >
+            {documentCount.toLocaleString()}
+          </Badge>
+        )}
       </div>
 
       {/* ---- Field list ---- */}

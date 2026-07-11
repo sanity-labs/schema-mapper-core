@@ -33,6 +33,14 @@ export type DiscoveredField = {
    * expanded.
    */
   containerKind?: 'object' | 'array'
+  /**
+   * For container stub rows: the name of the element type. For a named object
+   * container, this is the object type name (e.g. `productCore`). For an
+   * array container whose members are a named object type, this is that
+   * member type (e.g. `personEntry`). Absent when the container's contents
+   * are anonymous inline shapes.
+   */
+  containerElementType?: string
 }
 
 export type DiscoveredType = {
@@ -40,4 +48,11 @@ export type DiscoveredType = {
   title?: string
   documentCount: number
   fields: DiscoveredField[]
+  /**
+   * Whether this type is a `document` (has storage in the dataset, holds
+   * an _id, referenced by inbound refs) or a top-level named `object` (no
+   * storage — value type embedded in documents/other objects). Undefined
+   * treated as 'document' for back-compat with older submissions.
+   */
+  kind?: 'document' | 'object'
 }
