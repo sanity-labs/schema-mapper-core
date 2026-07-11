@@ -287,6 +287,20 @@ function FieldRow({
   const orphanedTargets = visibleTypeNames
     ? allTargets.filter(t => !visibleTypeNames.has(t))
     : [];
+  // eslint-disable-next-line no-console
+  if (field.isInlineObject && field.referenceTo && typeof window !== 'undefined') {
+    console.log('[FieldRow]', {
+      fieldName: field.name,
+      isInline: field.isInlineObject,
+      referenceTo: field.referenceTo,
+      isRef,
+      isRefLike,
+      allTargets,
+      visibleHas: visibleTypeNames ? visibleTypeNames.has(field.referenceTo!) : 'no-set',
+      orphanedTargets,
+      hasOnReferenceClick: !!onReferenceClick,
+    });
+  }
   // For row-level click: focus the first target by default
   const primaryTarget = allTargets[0];
 
