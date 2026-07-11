@@ -281,9 +281,9 @@ function FieldRow({
   return (
     <div
       className={`
-        relative flex items-center justify-between gap-2 px-3 py-1.5 text-xs
+        relative flex items-center gap-2 px-3 py-1.5 text-xs
         ${even ? 'bg-transparent' : 'bg-muted/40'}
-        ${isRef ? 'bg-indigo-50/60 dark:bg-indigo-950/20' : ''}
+        ${isRef || isContainer ? 'bg-indigo-50/60 dark:bg-indigo-950/20' : ''}
         ${isRef && primaryTarget && onReferenceClick ? 'schema-clickable' : ''}
       `}
       data-field-name={field.name}
@@ -310,14 +310,17 @@ function FieldRow({
     >
       {/* Chevron for container stub rows */}
       {isContainer && (
-        <span className="shrink-0 text-muted-foreground select-none" aria-hidden="true">
+        <span
+          className="shrink-0 text-sm leading-none text-muted-foreground select-none"
+          aria-hidden="true"
+        >
           {isOpen ? '▾' : '▸'}
         </span>
       )}
 
-      {/* Field name — indented rows show last path segment; container arrays get [] suffix */}
+      {/* Field name — indented rows show last path segment; container arrays get [] stripped */}
       <span
-        className={`truncate font-mono ${isRef || isInline ? 'font-medium text-indigo-700 dark:text-indigo-300' : 'text-card-foreground'}`}
+        className={`flex-1 min-w-0 truncate text-left font-mono ${isRef || isInline ? 'font-medium text-indigo-700 dark:text-indigo-300' : isContainer ? 'font-medium text-indigo-700 dark:text-indigo-300' : 'text-card-foreground'}`}
         title={field.name}
       >
         {indentLevel > 0 || isContainer
@@ -504,15 +507,19 @@ function SchemaNode({ data }: NodeProps<SchemaNodeType>) {
   // A field is visible if either it's top-level (no parentPath) OR every
   // ancestor container in its parentPath is open. Ancestors are derived
   // from the parentPath by walking the dot/[] segments.
+  //
+  // Note: children of array containers have parentPath ending in `[]`
+  // (e.g. `modules[]` for direct children, `modules[].item` deeper). The
+  // container itself is emitted with the un-suffixed name (`modules`),
+  // so we strip trailing `[]` on each segment before matching openPaths.
   const isFieldVisible = useCallback(
     (f: DiscoveredField): boolean => {
       if (!f.parentPath) return true;
-      // Walk each ancestor segment. Field parent path like "modules[].item"
-      // means we need both "modules[]" and "modules[].item" to be open.
       const parts = f.parentPath.split('.');
       let acc = '';
       for (const part of parts) {
-        acc = acc ? `${acc}.${part}` : part;
+        const bare = part.endsWith('[]') ? part.slice(0, -2) : part;
+        acc = acc ? `${acc}.${bare}` : bare;
         if (!openPaths.has(acc)) return false;
       }
       return true;
@@ -535,13 +542,16 @@ function SchemaNode({ data }: NodeProps<SchemaNodeType>) {
       // Only ref-bearing fields need handles.
       if (!(f.isReference || f.isInlineObject || f.isCrossDatasetReference || f.type === 'reference')) continue;
       // Find the nearest ancestor container that's visible (either it's
-      // top-level, or all ITS ancestors are open).
+      // top-level, or all ITS ancestors are open). Strip trailing `[]` on
+      // each segment when matching container field names, since array
+      // containers are stored as `modules` but children reference them
+      // as `modules[]` in parentPath.
       const parts = f.parentPath.split('.');
       let container: string | null = null;
       let acc = '';
       for (const part of parts) {
-        acc = acc ? `${acc}.${part}` : part;
-        // Is this container visible?
+        const bare = part.endsWith('[]') ? part.slice(0, -2) : part;
+        acc = acc ? `${acc}.${bare}` : bare;
         const containerField = fields.find(x => x.name === acc);
         if (!containerField) continue;
         if (isFieldVisible(containerField)) {
