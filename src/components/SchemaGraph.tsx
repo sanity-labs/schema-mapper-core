@@ -885,24 +885,27 @@ function GraphControls({
           />
         ))}
       </div>
-      {layout !== 'original' && (
       <div className="grid grid-cols-[auto_1fr_auto] items-center gap-x-3 gap-y-3 px-1 mt-2 text-xs text-gray-500 dark:text-gray-400">
-        <span>Spacing</span>
-        <input
-          type="range"
-          min="10"
-          max="500"
-          value={Math.round(spacing * 100)}
-          onChange={(e) => onSpacingChange(Number(e.target.value) / 100)}
-          className="w-32 h-1 accent-gray-700 justify-self-start"
-        />
-        <button
-          onClick={onResetSpacing}
-          className="text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 transition-colors justify-self-end"
-          title="Reset to default"
-        >
-          <RxReset className="text-xs" />
-        </button>
+        {layout !== 'original' && (
+          <>
+            <span>Spacing</span>
+            <input
+              type="range"
+              min="10"
+              max="500"
+              value={Math.round(spacing * 100)}
+              onChange={(e) => onSpacingChange(Number(e.target.value) / 100)}
+              className="w-32 h-1 accent-gray-700 justify-self-start"
+            />
+            <button
+              onClick={onResetSpacing}
+              className="text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 transition-colors justify-self-end"
+              title="Reset to default"
+            >
+              <RxReset className="text-xs" />
+            </button>
+          </>
+        )}
         <span aria-hidden="true" />
         <label className="col-span-2 flex items-center gap-1 cursor-pointer select-none">
           <input
@@ -924,29 +927,6 @@ function GraphControls({
           <span>Expand inline arrays</span>
         </label>
       </div>
-      )}
-      {layout === 'original' && (
-      <div className="flex items-center gap-3 px-1 mt-1 text-xs text-gray-500 dark:text-gray-400">
-        <label className="flex items-center gap-1 cursor-pointer select-none">
-          <input
-            type="checkbox"
-            checked={expandObjects}
-            onChange={(e) => onExpandObjectsChange?.(e.target.checked)}
-            className="w-3 h-3 accent-gray-700 cursor-pointer"
-          />
-          <span>Expand inline objects</span>
-        </label>
-        <label className="flex items-center gap-1 cursor-pointer select-none">
-          <input
-            type="checkbox"
-            checked={expandArrays}
-            onChange={(e) => onExpandArraysChange?.(e.target.checked)}
-            className="w-3 h-3 accent-gray-700 cursor-pointer"
-          />
-          <span>Expand inline arrays</span>
-        </label>
-      </div>
-      )}
     </div>
   )
 }
