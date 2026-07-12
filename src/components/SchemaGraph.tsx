@@ -697,10 +697,19 @@ function buildNodesAndEdges(
     },
   }))
 
-  // Distinct colors for edges — one per source type
+  // Distinct colors for edges. Two rules:
+  //   1. Edges targeting an object-kind type ALWAYS use amber, matching the
+  //      amber-bordered object nodes. This gives a real semantic cue.
+  //   2. Edges targeting a document-kind type use a per-source-type colour
+  //      chosen by hashing `type.name` into the palette below. Hashing makes
+  //      the palette deterministic: the same source type gets the same colour
+  //      in every viewer (customer app, internal, any future replay), and
+  //      regardless of whether the current view is the full graph or a focus
+  //      subset. Insertion-order palette assignment (the previous behaviour)
+  //      caused the same submission to look different in different apps.
+  const OBJECT_EDGE_COLOR = '#f59e0b' // amber, matches object node border
   const edgeColors = [
     '#6366f1', // indigo
-    '#f59e0b', // amber
     '#10b981', // emerald
     '#ef4444', // red
     '#8b5cf6', // violet
@@ -710,8 +719,16 @@ function buildNodesAndEdges(
     '#14b8a6', // teal
     '#a855f7', // purple
   ]
-  const sourceColorMap = new Map<string, string>()
-  let colorIdx = 0
+
+  // Deterministic per-name colour from the palette: same source name always
+  // maps to the same palette slot in every viewer, regardless of iteration
+  // order or visible subset. Simple djb2-style hash — good distribution over
+  // short strings, no crypto required.
+  const colorForSource = (name: string): string => {
+    let h = 5381
+    for (let i = 0; i < name.length; i++) h = ((h << 5) + h + name.charCodeAt(i)) | 0
+    return edgeColors[Math.abs(h) % edgeColors.length]
+  }
 
   const edges: SchemaEdge[] = []
 
@@ -728,14 +745,14 @@ function buildNodesAndEdges(
       const visibleTargets = allTargets.filter((t) => typeNames.has(t))
       if (visibleTargets.length === 0) return
 
-      if (!sourceColorMap.has(type.name)) {
-        sourceColorMap.set(type.name, edgeColors[colorIdx % edgeColors.length])
-        colorIdx++
-      }
-      const color = sourceColorMap.get(type.name)!
       const isInline = field.isInlineObject
 
       visibleTargets.forEach((target) => {
+        // Colour rule: edges to object-kind targets are always amber (matches
+        // the amber-bordered object nodes). Edges to document-kind targets
+        // use a deterministic per-source-name palette colour.
+        const isObjectTarget = typeKinds[target] === 'object'
+        const color = isObjectTarget ? OBJECT_EDGE_COLOR : colorForSource(type.name)
         edges.push({
           id: `${type.name}-${field.name}->${target}`,
           source: type.name,
