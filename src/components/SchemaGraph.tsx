@@ -903,32 +903,30 @@ function GraphControls({
         >
           <RxReset className="text-xs" />
         </button>
-        <span>Expand</span>
-        <div className="col-span-2 flex items-center gap-3">
-          <label className="flex items-center gap-1 cursor-pointer select-none">
-            <input
-              type="checkbox"
-              checked={expandObjects}
-              onChange={(e) => onExpandObjectsChange?.(e.target.checked)}
-              className="w-3 h-3 accent-gray-700 cursor-pointer"
-            />
-            <span>objects</span>
-          </label>
-          <label className="flex items-center gap-1 cursor-pointer select-none">
-            <input
-              type="checkbox"
-              checked={expandArrays}
-              onChange={(e) => onExpandArraysChange?.(e.target.checked)}
-              className="w-3 h-3 accent-gray-700 cursor-pointer"
-            />
-            <span>arrays</span>
-          </label>
-        </div>
+        <span aria-hidden="true" />
+        <label className="col-span-2 flex items-center gap-1 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={expandObjects}
+            onChange={(e) => onExpandObjectsChange?.(e.target.checked)}
+            className="w-3 h-3 accent-gray-700 cursor-pointer"
+          />
+          <span>Expand inline objects</span>
+        </label>
+        <span aria-hidden="true" />
+        <label className="col-span-2 flex items-center gap-1 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={expandArrays}
+            onChange={(e) => onExpandArraysChange?.(e.target.checked)}
+            className="w-3 h-3 accent-gray-700 cursor-pointer"
+          />
+          <span>Expand inline arrays</span>
+        </label>
       </div>
       )}
       {layout === 'original' && (
       <div className="flex items-center gap-3 px-1 mt-1 text-xs text-gray-500 dark:text-gray-400">
-        <span>Expand</span>
         <label className="flex items-center gap-1 cursor-pointer select-none">
           <input
             type="checkbox"
@@ -936,7 +934,7 @@ function GraphControls({
             onChange={(e) => onExpandObjectsChange?.(e.target.checked)}
             className="w-3 h-3 accent-gray-700 cursor-pointer"
           />
-          <span>objects</span>
+          <span>Expand inline objects</span>
         </label>
         <label className="flex items-center gap-1 cursor-pointer select-none">
           <input
@@ -945,7 +943,7 @@ function GraphControls({
             onChange={(e) => onExpandArraysChange?.(e.target.checked)}
             className="w-3 h-3 accent-gray-700 cursor-pointer"
           />
-          <span>arrays</span>
+          <span>Expand inline arrays</span>
         </label>
       </div>
       )}
