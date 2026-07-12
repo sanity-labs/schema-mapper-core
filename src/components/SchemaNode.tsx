@@ -730,14 +730,14 @@ function SchemaNode({ data }: NodeProps<SchemaNodeType>) {
         {isObjectNode ? (
           <Badge
             variant="secondary"
-            className="shrink-0 text-[10px] px-1.5 py-0 leading-4 bg-amber-100 text-amber-900 dark:bg-amber-900/50 dark:text-amber-100 font-normal"
+            className="shrink-0 text-[10px] px-1.5 py-0 leading-4 bg-amber-100 text-amber-900 hover:bg-amber-100 dark:bg-amber-900/50 dark:hover:bg-amber-900/50 dark:text-amber-100 font-normal"
           >
             OBJECT
           </Badge>
         ) : (
           <Badge
             variant="secondary"
-            className="shrink-0 text-[10px] px-1.5 py-0 leading-4 bg-white text-black dark:bg-gray-800 dark:text-gray-200 font-normal"
+            className="shrink-0 text-[10px] px-1.5 py-0 leading-4 bg-teal-100 text-teal-900 hover:bg-teal-100 dark:bg-teal-900/50 dark:hover:bg-teal-900/50 dark:text-teal-100 font-normal"
           >
             <span className="opacity-60 mr-1">DOC</span>
             <span className="tabular-nums">{documentCount.toLocaleString()}</span>
