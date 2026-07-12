@@ -737,7 +737,7 @@ function SchemaNode({ data }: NodeProps<SchemaNodeType>) {
         ) : (
           <Badge
             variant="secondary"
-            className="shrink-0 text-[10px] px-1.5 py-0 leading-4 bg-blue-100 text-blue-900 hover:bg-blue-100 dark:bg-blue-900/50 dark:hover:bg-blue-900/50 dark:text-blue-100 font-normal"
+            className="shrink-0 text-[10px] px-1.5 py-0 leading-4 bg-white text-slate-700 border border-slate-200 hover:bg-white dark:bg-slate-900 dark:hover:bg-slate-900 dark:text-slate-200 dark:border-slate-700 font-normal"
           >
             <span className="opacity-60 mr-1">DOC</span>
             <span className="tabular-nums">{documentCount.toLocaleString()}</span>
