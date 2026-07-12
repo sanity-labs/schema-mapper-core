@@ -381,7 +381,7 @@ function FieldRow({
         title={isRef && allTargets.length > 1 ? `Accepts: ${allTargets.join(', ')}` : undefined}
       >
         {isRef && <ArrowRight className="mr-0.5 h-2.5 w-2.5" />}
-        {isPortableText ? 'portable text' : isInline ? field.referenceTo : field.type}
+        {isPortableText ? 'portable text' : isInline ? field.referenceTo : (field.isArray && field.containerElementType && !isContainer ? field.containerElementType : field.type)}
         {field.isArray && '[]'}
       </Badge>
 
