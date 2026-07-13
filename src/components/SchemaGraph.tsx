@@ -939,6 +939,7 @@ interface SchemaGraphInnerProps {
   types: DiscoveredType[]
   initialPositions?: Record<string, { x: number; y: number }>
   initialEdgeStyle?: EdgeStyle
+  initialLayoutType?: LayoutType
   initialExpandObjects?: boolean
   initialExpandArrays?: boolean
   initialTransientExpanded?: string[]
@@ -966,7 +967,7 @@ interface SchemaGraphInnerProps {
    */
   curatedReadOnly?: boolean
   onCuratedDrag?: (positions: Record<string, {x: number; y: number}>) => void
-  onCuratedExitForAlgo?: () => void
+  onCuratedExitForAlgo?: (target?: LayoutType) => void
   /** When curated is active + locked, called if the user clicks/interacts with a node. Consumer typically opens an "unlock this layout?" dialog. */
   onLockedInteraction?: () => void
   /**
@@ -983,6 +984,7 @@ function SchemaGraphInner({
   types,
   initialPositions,
   initialEdgeStyle,
+  initialLayoutType,
   initialExpandObjects,
   initialExpandArrays,
   initialTransientExpanded,
@@ -1084,6 +1086,12 @@ function SchemaGraphInner({
   }, [])
   const [layoutApplied, setLayoutApplied] = useState(false)
   const [layoutType, setLayoutType] = useState<LayoutType>(() => {
+    // Explicit initialLayoutType prop wins — parent uses this to force a
+    // specific algo on a fresh mount (e.g. clicking an algo tab while in a
+    // curated layout: parent exits curated + remounts, and passes the
+    // chosen algo so the fresh mount applies it instead of falling to
+    // 'original' from initialPositions).
+    if (initialLayoutType) return initialLayoutType
     // Default to 'original' if positions were provided
     if (initialPositions && Object.keys(initialPositions).length > 0) return 'original'
     try {
@@ -1744,7 +1752,7 @@ function SchemaGraphInner({
     // the layout and applies the algo. (Simple + expected — users don't want a
     // prompt.)
     if (curatedActive && newLayout !== 'original' && onCuratedExitForAlgo) {
-      onCuratedExitForAlgo()
+      onCuratedExitForAlgo(newLayout)
       // Write the chosen algo so the curated-deactivation effect picks it up.
       try { localStorage.setItem('schema-mapper:layoutType', newLayout) } catch {}
       return
@@ -1760,7 +1768,7 @@ function SchemaGraphInner({
         setEdgeStyle(initialEdgeStyle)
         edgeStyleRef.current = initialEdgeStyle
       }
-      onCuratedExitForAlgo()
+      onCuratedExitForAlgo('original')
       try { localStorage.setItem('schema-mapper:layoutType', 'original') } catch {}
       return
     }
@@ -2145,6 +2153,8 @@ export interface SchemaGraphProps {
   types: DiscoveredType[]
   initialPositions?: Record<string, { x: number; y: number }>
   initialEdgeStyle?: 'bezier' | 'step' | 'straight'
+  /** Force initial layout type. Overrides positions-based default. Used for algo-clicks that unmount curated. */
+  initialLayoutType?: 'original' | 'dagre' | 'layered' | 'force' | 'stress'
   /** Preload expand-objects toggle from persisted view/payload. Undefined = read localStorage default. */
   initialExpandObjects?: boolean
   /** Preload expand-arrays toggle from persisted view/payload. Undefined = read localStorage default. */
@@ -2225,7 +2235,7 @@ export interface SchemaGraphProps {
    * When curatedActive is set and the user clicks an algorithm tab, this
    * fires INSTEAD of applying the algo. Caller shows a confirm dialog.
    */
-  onCuratedExitForAlgo?: () => void
+  onCuratedExitForAlgo?: (target?: 'original' | 'dagre' | 'layered' | 'force' | 'stress') => void
   /** When curated is active + locked, called if the user clicks/interacts with a node. Consumer typically opens an "unlock this layout?" dialog. */
   onLockedInteraction?: () => void
   /**
