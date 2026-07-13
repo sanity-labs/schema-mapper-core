@@ -509,6 +509,7 @@ function NodeContextMenu({ x, y, typeName, onFocus, onExpand, onClose }: {
   onFocus: () => void; onExpand: () => void; onClose: () => void
 }) {
   useEffect(() => {
+    __effLog('line511');
     // Defer to next frame so the opening click doesn't immediately close
     const raf = requestAnimationFrame(() => {
       window.addEventListener('click', handler, { once: true, capture: false })
@@ -604,6 +605,7 @@ function SearchBox({ query, onChange, onClear, resultCount, totalCount, offsetTo
   const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
+    __effLog('line606');
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && query) {
         e.preventDefault()
@@ -1011,11 +1013,20 @@ function SchemaGraphInner({
   const isDark = useDarkMode()
   const { fitView, getViewport, setViewport } = useReactFlow()
   const nodesInitialized = useNodesInitialized()
+  // DIAG: count firings per effect line, log every Nth firing to catch loops
+  const __effCounts = useRef<Record<string, number>>({})
+  const __effLog = (name: string) => {
+    const n = (__effCounts.current[name] || 0) + 1
+    __effCounts.current[name] = n
+    if (n === 1 || n === 5 || n === 20 || n % 100 === 0) console.log('[SG.effect count]', name, '=', n)
+  }
+
   const containerRef = useRef<HTMLDivElement>(null)
 
   // Smooth reframe when container resizes (e.g. collapsible nav)
   const fitViewTriggerRef = useRef(fitViewTrigger ?? 0)
   useEffect(() => {
+    __effLog('line1026');
     if (fitViewTrigger != null && fitViewTrigger !== fitViewTriggerRef.current) {
       fitViewTriggerRef.current = fitViewTrigger
       // Small delay to let container finish resizing
@@ -1029,6 +1040,7 @@ function SchemaGraphInner({
   // re-dispatches wheel events from nodes directly on the .react-flow__renderer
   // element, bypassing the nopan check.
   useEffect(() => {
+    __effLog('line1039');
     const container = containerRef.current
     if (!container) return
 
@@ -1214,6 +1226,7 @@ function SchemaGraphInner({
   const handleFocusRef = useRef<((typeName: string, depth: 0 | 1 | 2) => void) | null>(null)
   const handleExitFocusRef = useRef<(() => void) | null>(null)
   useEffect(() => {
+    __effLog('line1224');
     if (!pendingFocusType || pendingFocusType === pendingFocusHandledRef.current) return
     // Special sentinel: clear focus and restore full graph
     if (pendingFocusType === '__clear__') {
@@ -1246,6 +1259,7 @@ function SchemaGraphInner({
     }
   }
   useEffect(() => {
+    __effLog('line1256');
     if (!restoreViewport) {
       skipFitViewRef.current = false
       return
@@ -1265,6 +1279,7 @@ function SchemaGraphInner({
   // Instant viewport nudge (for nav collapse/expand center compensation)
   const nudgeTriggerRef = useRef(0)
   useEffect(() => {
+    __effLog('line1275');
     if (!viewportNudge || viewportNudge.trigger === nudgeTriggerRef.current) return
     nudgeTriggerRef.current = viewportNudge.trigger
     const vp = getViewport()
@@ -1312,6 +1327,7 @@ function SchemaGraphInner({
 
   // Re-sync when types change (e.g. switching dataset/schema)
   useEffect(() => {
+    __effLog('line1322');
     const newKey = typesKey(types)
     const oldKey = prevTypesKeyRef.current
 
@@ -1375,6 +1391,7 @@ function SchemaGraphInner({
 
   // Notify parent of state changes
   useEffect(() => {
+    __effLog('line1385');
     onStateChange?.({
       focusedType: focusState?.typeName,
       focusDepth: focusState?.depth,
@@ -1570,6 +1587,7 @@ function SchemaGraphInner({
 
   // Update edge types when style changes
   useEffect(() => {
+    __effLog('line1580');
     setEdges((eds) => eds.map(e => ({ ...e, type: 'floating', data: { ...e.data, edgeStyle } })))
   }, [edgeStyle, setEdges])
 
@@ -1675,6 +1693,7 @@ function SchemaGraphInner({
     : ''
   const prevCuratedFingerprintRef = useRef(curatedFingerprint)
   useEffect(() => {
+    __effLog('line1685');
     if (!curatedActive) {
       prevCuratedFingerprintRef.current = ''
       return
@@ -1916,6 +1935,7 @@ function SchemaGraphInner({
 
   // Escape key exits focus mode
   useEffect(() => {
+    __effLog('line1926');
     if (!focusState) return
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'Escape') handleExitFocus()
