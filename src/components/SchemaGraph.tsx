@@ -1019,7 +1019,7 @@ function SchemaGraphInner({
     if (fitViewTrigger != null && fitViewTrigger !== fitViewTriggerRef.current) {
       fitViewTriggerRef.current = fitViewTrigger
       // Small delay to let container finish resizing
-      const timer = setTimeout(() => fitView({ padding: 0.12, duration: 300 }), 50)
+      const timer = setTimeout(() => fitView({ padding: 0.22, duration: 300 }), 50)
       return () => clearTimeout(timer)
     }
   }, [fitViewTrigger, fitView])
@@ -1538,7 +1538,7 @@ function SchemaGraphInner({
       if (!skipFitViewRef.current) {
         window.requestAnimationFrame(() => {
           if (myGen !== applyLayoutGenRef.current) return
-          fitView({ padding: 0.12, duration: skipAnimation ? 0 : 300 })
+          fitView({ padding: 0.22, duration: skipAnimation ? 0 : 300 })
         })
       }
     } catch (err) {
@@ -2000,6 +2000,7 @@ function SchemaGraphInner({
         edgeTypes={edgeTypes}
         colorMode={isDark ? 'dark' : 'light'}
         fitView
+        fitViewOptions={{ padding: 0.22 }}
         panOnScroll
         zoomOnScroll={false}
         zoomOnPinch
