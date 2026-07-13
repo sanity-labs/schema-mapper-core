@@ -1503,15 +1503,27 @@ function SchemaGraphInner({
       // positions verbatim", never re-layout.
       const useCuratedPositions = !!curatedActiveRef.current && originalPositions && Object.keys(originalPositions).length > 0
       if ((layout === 'original' || useCuratedPositions) && originalPositions && Object.keys(originalPositions).length > 0) {
-        // When initialFocusState is set AND we're not in any active-user or
-        // curated context, filter to that submitted-focus neighbourhood.
-        // Otherwise the caller passes an already-filtered subset (via
-        // handleFocus or curated views) and re-filtering to a different
-        // neighbourhood would produce a wrong-nodes-at-wrong-positions render.
+        // When focused (either a live user focus, or the submitted initial
+        // focus that hasn't been exited), filter the type set to that
+        // neighbourhood before applying stored positions. Without this,
+        // types outside the focus render with their existing (arbitrary)
+        // positions and produce a visible re-layout — most obviously when
+        // "Copy this view to a new layout" is invoked from a focused
+        // Submitted view: the seeded positions only cover the subset, so
+        // every other node would fall to a default arrangement.
+        //
+        // Precedence: live focusStateRef wins (user is focused). Else the
+        // submission's initialFocusState applies ONLY when no curated view
+        // is active (in curated mode, the view's own subset is authoritative
+        // and initialFocusState is irrelevant).
+        const focusForFilter =
+          focusStateRef.current
+            ?? (!curatedActiveRef.current ? initialFocusState : null)
+            ?? null
         let nodesToLayout = currentNodes
         let edgesToSet = currentEdges
-        if (initialFocusState && !focusStateRef.current && !curatedActiveRef.current) {
-          const neighbourhood = getNeighbourhood(types, initialFocusState.typeName, initialFocusState.depth)
+        if (focusForFilter) {
+          const neighbourhood = getNeighbourhood(types, focusForFilter.typeName, focusForFilter.depth)
           nodesToLayout = currentNodes.filter(n => neighbourhood.has(n.id))
           edgesToSet = currentEdges.filter(e => neighbourhood.has(e.source) && neighbourhood.has(e.target))
           if (myGen !== applyLayoutGenRef.current) return
