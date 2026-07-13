@@ -509,7 +509,6 @@ function NodeContextMenu({ x, y, typeName, onFocus, onExpand, onClose }: {
   onFocus: () => void; onExpand: () => void; onClose: () => void
 }) {
   useEffect(() => {
-    __effLog('line511');
     // Defer to next frame so the opening click doesn't immediately close
     const raf = requestAnimationFrame(() => {
       window.addEventListener('click', handler, { once: true, capture: false })
@@ -605,7 +604,6 @@ function SearchBox({ query, onChange, onClear, resultCount, totalCount, offsetTo
   const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
-    __effLog('line606');
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && query) {
         e.preventDefault()
