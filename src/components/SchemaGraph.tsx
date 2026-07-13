@@ -1575,6 +1575,7 @@ function SchemaGraphInner({
 
   // Initial layout after nodes are measured
   useEffect(() => {
+    console.log('[SG.initialLayout effect]', {nodesInitialized, layoutApplied, nodesCount: nodes.length})
     if (nodesInitialized && !layoutApplied) {
       const override = searchLayoutOverrideRef.current
       if (override) {
@@ -1600,6 +1601,7 @@ function SchemaGraphInner({
   const prevCuratedIdRef = useRef<string | null>(null)
 
   useEffect(() => {
+    console.log('[SG.curatedActive effect]', {curatedActiveId, curatedActiveViewKey, curatedRestoreVersion, prev: prevCuratedIdRef.current})
     const prev = prevCuratedIdRef.current
     prevCuratedIdRef.current = curatedActiveId
 
@@ -1692,6 +1694,7 @@ function SchemaGraphInner({
   // focus, so we start from a clean full-graph state.
   const prevRestoreVersionRef = useRef<number | undefined>(undefined)
   useEffect(() => {
+    console.log('[SG.restoreFocus effect]', {restoreFocusVersion, restoreFocus, prev: prevRestoreVersionRef.current})
     if (restoreFocusVersion === undefined) return
     if (prevRestoreVersionRef.current === restoreFocusVersion) return
     prevRestoreVersionRef.current = restoreFocusVersion
