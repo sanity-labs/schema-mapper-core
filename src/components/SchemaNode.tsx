@@ -2,7 +2,7 @@ import { Handle, Position, type NodeProps, type Node } from '@xyflow/react';
 import { Badge } from './ui/badge';
 import { ArrowRight } from 'lucide-react';
 import { GoDatabase, GoImage, GoLock } from 'react-icons/go';
-import React, { memo, useMemo, useState, useEffect, useRef } from 'react';
+import React, { memo, useMemo, useState, useEffect, useRef, useCallback, useContext } from 'react';
 import { Tooltip, Box, Text } from '@sanity/ui';
 import type { DiscoveredField } from '../types';
 
@@ -22,6 +22,12 @@ export type SchemaNodeData = {
   typeName: string;
   documentCount: number;
   fields: DiscoveredField[];
+  /**
+   * Whether this node represents a document type (default) or a named
+   * object type. Object nodes use a different border tone + header pill
+   * and don't show a document count.
+   */
+  kind?: 'document' | 'object';
   hasIncoming?: boolean;
   hasOutgoing?: boolean;
   incomingEdgeCount?: number;
@@ -31,9 +37,35 @@ export type SchemaNodeData = {
   onInaccessibleClick?: (projectName: string, datasetName: string) => void;
   accessibleProjectIds?: Set<string>;
   visibleTypeNames?: Set<string>;
+  /**
+   * Kind lookup for all types in the current view — used by FieldRow to color
+   * orphan-target lozenges according to the target's kind (amber for
+   * named-object targets, indigo/purple for documents). Populated by
+   * buildNodesAndEdges from the types array.
+   */
+  typeKinds?: Record<string, 'document' | 'object'>;
 };
 
 export type SchemaNodeType = Node<SchemaNodeData, 'schema'>;
+
+/**
+ * Context surfaced by SchemaGraph so every SchemaNode can read the current
+ * expand-mode state without threading it through node.data (which would
+ * require rebuilding nodes on every toggle). Nodes re-render when context
+ * value changes.
+ */
+export type ExpandContextValue = {
+  expandObjects: boolean;
+  expandArrays: boolean;
+  transientExpanded: Set<string>;
+  onToggleTransient?: (typeName: string, fieldPath: string) => void;
+};
+
+export const ExpandContext = React.createContext<ExpandContextValue>({
+  expandObjects: false,
+  expandArrays: false,
+  transientExpanded: new Set(),
+});
 
 // ---------------------------------------------------------------------------
 // Helpers — field type → badge style
@@ -64,6 +96,8 @@ function fieldBadgeStyle(type: DiscoveredField['type']): BadgeStyle {
     case 'object':
     case 'block':
       return { className: 'bg-amber-100 text-amber-700 hover:bg-amber-100 border-amber-200 dark:bg-amber-900/50 dark:text-amber-300 dark:border-amber-800', variant: 'secondary' };
+    case 'portableText':
+      return { className: 'bg-rose-100 text-rose-700 hover:bg-rose-100 border-rose-200 dark:bg-rose-900/50 dark:text-rose-300 dark:border-rose-800', variant: 'secondary' };
     case 'url':
       return { className: 'bg-cyan-100 text-cyan-700 hover:bg-cyan-100 border-cyan-200 dark:bg-cyan-900/50 dark:text-cyan-300 dark:border-cyan-800', variant: 'secondary' };
     case 'unknown':
@@ -205,8 +239,14 @@ function FieldRow({
   onInaccessibleClick,
   accessibleProjectIds,
   visibleTypeNames,
+  typeKinds,
   sourceTypeName,
   onMultiTargetOpenChange,
+  indentLevel = 0,
+  isContainer = false,
+  isOpen = false,
+  onToggleContainer,
+  hiddenChildRefs,
 }: {
   field: DiscoveredField;
   index: number;
@@ -218,19 +258,42 @@ function FieldRow({
   onInaccessibleClick?: (projectName: string, datasetName: string) => void;
   accessibleProjectIds?: Set<string>;
   visibleTypeNames?: Set<string>;
+  typeKinds?: Record<string, 'document' | 'object'>;
   sourceTypeName?: string;
   /** Notify parent SchemaNode when this row's multi-target lozenge expands,
    *  so the node can bump its z-index to render above sibling nodes. */
   onMultiTargetOpenChange?: (fieldName: string, open: boolean) => void;
+  /** Indentation level (0 = top-level). Each level indents by ~4 chars worth. */
+  indentLevel?: number;
+  /** True if this row is a container stub (object/array parent). */
+  isContainer?: boolean;
+  /** For container stub rows: whether the children are currently rendered. */
+  isOpen?: boolean;
+  /** Called when the user clicks the chevron on a container stub row. */
+  onToggleContainer?: () => void;
+  /** For container stub rows: names of hidden child ref fields whose
+   *  source handles should render invisibly at this row's position so
+   *  edges can still connect. */
+  hiddenChildRefs?: string[];
 }) {
   const isCrossDataset = field.isCrossDatasetReference === true;
   const isRef = !isCrossDataset && (field.isReference || field.type === 'reference');
   const isInline = field.isInlineObject === true;
-  const style = fieldBadgeStyle(isInline ? 'object' : field.type);
+  // Inline object rows referencing a named object type behave like refs for
+  // navigation: clicking the row should focus the target, and out-of-focus
+  // targets should render as navigable orphan lozenges. This matters most
+  // for named-object arrays deep in a chain (e.g. plainThread.entries[] →
+  // plainEntry) where the target isn't on-canvas at shallow focus depths.
+  const isRefLike = isRef || (isInline && !!field.referenceTo);
+  // Portable text takes precedence over inline-object for badge styling —
+  // we set isInlineObject: true on PT rows only to enable orphan-lozenge
+  // + edge plumbing to embedded named types, not to relabel the badge.
+  const isPortableText = field.type === 'portableText';
+  const style = fieldBadgeStyle(isPortableText ? 'portableText' : (isInline ? 'object' : field.type));
   const even = index % 2 === 0;
 
   // All reference targets (handles multi-target refs)
-  const allTargets: string[] = isRef
+  const allTargets: string[] = isRefLike
     ? (field.referenceTargets && field.referenceTargets.length > 0
         ? field.referenceTargets
         : (field.referenceTo ? [field.referenceTo] : []))
@@ -245,10 +308,10 @@ function FieldRow({
   return (
     <div
       className={`
-        relative flex items-center justify-between gap-2 px-3 py-1.5 text-xs
+        relative flex items-center gap-2 px-3 py-1.5 text-xs
         ${even ? 'bg-transparent' : 'bg-muted/40'}
-        ${isRef ? 'bg-indigo-50/60 dark:bg-indigo-950/20' : ''}
-        ${isRef && primaryTarget && onReferenceClick ? 'schema-clickable' : ''}
+        ${isRef || isContainer ? 'bg-indigo-50/60 dark:bg-indigo-950/20' : ''}
+        ${isRefLike && primaryTarget && onReferenceClick ? 'schema-clickable' : ''}
       `}
       data-field-name={field.name}
       data-field-type={field.type}
@@ -257,20 +320,58 @@ function FieldRow({
       data-field-is-array={field.isArray ? 'true' : undefined}
       data-field-ref-to={field.referenceTo || undefined}
       data-field-ref-targets={allTargets.length > 1 ? allTargets.join(',') : undefined}
-      onClick={isRef && primaryTarget && onReferenceClick ? (e: React.MouseEvent) => {
+      onClick={isRefLike && primaryTarget && onReferenceClick ? (e: React.MouseEvent) => {
         e.stopPropagation();
         onReferenceClick(primaryTarget);
-      } : undefined}
-      onMouseDown={isRef && primaryTarget && onReferenceClick ? (e: React.MouseEvent) => e.stopPropagation() : undefined}
-      onPointerDown={isRef && primaryTarget && onReferenceClick ? (e: React.PointerEvent) => e.stopPropagation() : undefined}
-      style={isRef && primaryTarget && onReferenceClick ? { cursor: 'pointer' } : undefined}
+      } : (isContainer && onToggleContainer ? (e: React.MouseEvent) => {
+        e.stopPropagation();
+        onToggleContainer();
+      } : undefined)}
+      onMouseDown={isRefLike && primaryTarget && onReferenceClick ? (e: React.MouseEvent) => e.stopPropagation() : (isContainer && onToggleContainer ? (e: React.MouseEvent) => e.stopPropagation() : undefined)}
+      onPointerDown={isRefLike && primaryTarget && onReferenceClick ? (e: React.PointerEvent) => e.stopPropagation() : (isContainer && onToggleContainer ? (e: React.PointerEvent) => e.stopPropagation() : undefined)}
+      style={{
+        ...(isRefLike && primaryTarget && onReferenceClick ? { cursor: 'pointer' } : {}),
+        ...(isContainer && onToggleContainer ? { cursor: 'pointer' } : {}),
+        ...(indentLevel > 0 ? { paddingLeft: `${12 + indentLevel * 18}px` } : {}),
+      }}
     >
-      {/* Field name */}
+      {/* Chevron for container stub rows */}
+      {isContainer && (
+        <span
+          className="shrink-0 text-xl text-indigo-600 dark:text-indigo-400 select-none font-semibold flex items-center"
+          style={{ lineHeight: 0, transform: 'translateY(-1px)' }}
+          aria-hidden="true"
+        >
+          {isOpen ? '▾' : '▸'}
+        </span>
+      )}
+
+      {/* Nested-row indicator: leaves and non-container rows inside a
+          container get a subtle ↳ prefix to signal ownership. Containers
+          themselves already have the chevron. */}
+      {indentLevel > 0 && !isContainer && (
+        <span
+          className="shrink-0 text-gray-400 dark:text-gray-600 select-none font-mono text-sm leading-none"
+          aria-hidden="true"
+        >
+          ↳
+        </span>
+      )}
+
+      {/* Field name — indented rows show last path segment; container arrays get [] stripped */}
       <span
-        className={`truncate font-mono ${isRef || isInline ? 'font-medium text-indigo-700 dark:text-indigo-300' : 'text-card-foreground'}`}
+        className={`flex-1 min-w-0 truncate text-left font-mono ${isRef || isInline ? 'font-medium text-indigo-700 dark:text-indigo-300' : isContainer ? 'font-medium text-indigo-700 dark:text-indigo-300' : 'text-card-foreground'}`}
         title={field.name}
       >
-        {field.name}
+        {indentLevel > 0 || isContainer
+          ? (() => {
+              const segments = field.name.split('.');
+              const last = segments[segments.length - 1];
+              // Array containers: strip trailing [] on the segment and let the
+              // badge convey array-ness. Cleaner display in the row.
+              return last.endsWith('[]') ? last.slice(0, -2) : last;
+            })()
+          : field.name}
       </span>
 
       {/* Type badge */}
@@ -280,7 +381,7 @@ function FieldRow({
         title={isRef && allTargets.length > 1 ? `Accepts: ${allTargets.join(', ')}` : undefined}
       >
         {isRef && <ArrowRight className="mr-0.5 h-2.5 w-2.5" />}
-        {isInline ? field.referenceTo : field.type}
+        {isPortableText ? 'portable text' : isInline ? field.referenceTo : (field.isArray && field.containerElementType && !isContainer ? field.containerElementType : field.type)}
         {field.isArray && '[]'}
       </Badge>
 
@@ -294,6 +395,20 @@ function FieldRow({
         />
       )}
 
+      {/* Fallback source handles for hidden children — when a container is
+          collapsed, the collapsed children's ref handles need to exist SOMEWHERE
+          in the DOM so React Flow can attach edges. We stash them at this
+          container row's right edge, invisible. */}
+      {isContainer && !isOpen && hiddenChildRefs && hiddenChildRefs.map((childName) => (
+        <Handle
+          key={childName}
+          type="source"
+          position={Position.Right}
+          id={`ref-${childName}`}
+          className="!absolute !right-0 !top-1/2 !-translate-y-1/2 !translate-x-1/2 !w-[1px] !h-[1px] !border-0 !bg-transparent !min-w-0 !min-h-0"
+        />
+      ))}
+
       {/* Orphaned reference lozenge(s) — target types not on the current canvas.
           ≤2 orphans: render inline.
           3+ orphans: collapse into a single "+N targets" lozenge with a
@@ -302,20 +417,26 @@ function FieldRow({
       {orphanedTargets.length > 0 && onReferenceClick && (
         orphanedTargets.length <= 2 ? (
           <div className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-[calc(100%+8px)] z-10 flex items-center gap-1">
-            {orphanedTargets.map((target) => (
-              <button
-                key={target}
-                className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 text-[10px] font-medium border border-indigo-200 dark:border-indigo-700 hover:bg-indigo-200 dark:hover:bg-indigo-800/50 transition-colors whitespace-nowrap shadow-sm"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onReferenceClick(target);
-                }}
-                title={`Focus on ${target}`}
-              >
-                <ArrowRight className="w-2.5 h-2.5" />
-                {target}
-              </button>
-            ))}
+            {orphanedTargets.map((target) => {
+              const isObjectTarget = typeKinds?.[target] === 'object';
+              const pillClass = isObjectTarget
+                ? "flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300 text-[10px] font-medium border border-amber-200 dark:border-amber-700 hover:bg-amber-200 dark:hover:bg-amber-800/50 transition-colors whitespace-nowrap shadow-sm"
+                : "flex items-center gap-1 px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 text-[10px] font-medium border border-indigo-200 dark:border-indigo-700 hover:bg-indigo-200 dark:hover:bg-indigo-800/50 transition-colors whitespace-nowrap shadow-sm";
+              return (
+                <button
+                  key={target}
+                  className={pillClass}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onReferenceClick(target);
+                  }}
+                  title={`Focus on ${target}`}
+                >
+                  <ArrowRight className="w-2.5 h-2.5" />
+                  {target}
+                </button>
+              );
+            })}
           </div>
         ) : (
           <MultiTargetPopover
@@ -393,7 +514,105 @@ function FieldRow({
 // ---------------------------------------------------------------------------
 
 function SchemaNode({ data }: NodeProps<SchemaNodeType>) {
-  const { typeName, documentCount, fields, onReferenceClick, onCrossDatasetNavigate, onMediaLibraryClick, onInaccessibleClick, accessibleProjectIds, visibleTypeNames } = data;
+  const { typeName, documentCount, fields, kind, onReferenceClick, onCrossDatasetNavigate, onMediaLibraryClick, onInaccessibleClick, accessibleProjectIds, visibleTypeNames, typeKinds } = data;
+  const isObjectNode = kind === 'object';
+  const expandCtx = useContext(ExpandContext);
+  const expandObjects = expandCtx.expandObjects;
+  const expandArrays = expandCtx.expandArrays;
+  // Transient overrides use composite keys `${typeName}::${fieldPath}` so
+  // fields with the same name in different types don't collide.
+  const isFieldOverridden = useCallback(
+    (fieldPath: string) => expandCtx.transientExpanded.has(`${typeName}::${fieldPath}`),
+    [expandCtx.transientExpanded, typeName],
+  );
+  const onToggleTransient = expandCtx.onToggleTransient
+    ? (fieldPath: string) => expandCtx.onToggleTransient!(typeName, fieldPath)
+    : undefined;
+
+  // Compute which container paths are "open" (children rendered).
+  // A container is open when:
+  //   1. its global flag is on (expandObjects for object containers,
+  //      expandArrays for array containers), AND user hasn't overridden it OFF
+  //   OR
+  //   2. its global flag is off but user has overridden it ON via chevron
+  // The transientExpanded set holds paths that DIFFER from the default —
+  // so it's a XOR against the container's default.
+  const openPaths = useMemo(() => {
+    const open = new Set<string>();
+    for (const f of fields) {
+      if (!f.containerKind) continue;
+      const defaultOpen =
+        f.containerKind === 'object' ? !!expandObjects : !!expandArrays;
+      const overridden = isFieldOverridden(f.name);
+      // Default-open XOR override → open. Default-closed XOR override → open when override present.
+      const isOpen = defaultOpen !== overridden;
+      if (isOpen) open.add(f.name);
+    }
+    return open;
+  }, [fields, expandObjects, expandArrays, isFieldOverridden]);
+
+  // A field is visible if either it's top-level (no parentPath) OR every
+  // ancestor container in its parentPath is open. Ancestors are derived
+  // from the parentPath by walking the dot/[] segments.
+  //
+  // Note: children of array containers have parentPath ending in `[]`
+  // (e.g. `modules[]` for direct children, `modules[].item` deeper). The
+  // container itself is emitted with the un-suffixed name (`modules`),
+  // so we strip trailing `[]` on each segment before matching openPaths.
+  const isFieldVisible = useCallback(
+    (f: DiscoveredField): boolean => {
+      if (!f.parentPath) return true;
+      const parts = f.parentPath.split('.');
+      let acc = '';
+      for (const part of parts) {
+        const bare = part.endsWith('[]') ? part.slice(0, -2) : part;
+        acc = acc ? `${acc}.${bare}` : bare;
+        if (!openPaths.has(acc)) return false;
+      }
+      return true;
+    },
+    [openPaths],
+  );
+
+  const visibleFields = useMemo(() => fields.filter(isFieldVisible), [fields, isFieldVisible]);
+
+  // For hidden ref/inline fields, we still need to render their source
+  // handles so React Flow can draw edges. We stash them under the nearest
+  // ANCESTOR that IS visible (the closest collapsed container in the chain).
+  const hiddenRefHandles = useMemo(() => {
+    // Map: container field name → array of hidden ref field names whose
+    // handles should render at that container's row position.
+    const map = new Map<string, string[]>();
+    for (const f of fields) {
+      if (!f.parentPath) continue;
+      if (isFieldVisible(f)) continue;
+      // Only ref-bearing fields need handles.
+      if (!(f.isReference || f.isInlineObject || f.isCrossDatasetReference || f.type === 'reference')) continue;
+      // Find the nearest ancestor container that's visible (either it's
+      // top-level, or all ITS ancestors are open). Strip trailing `[]` on
+      // each segment when matching container field names, since array
+      // containers are stored as `modules` but children reference them
+      // as `modules[]` in parentPath.
+      const parts = f.parentPath.split('.');
+      let container: string | null = null;
+      let acc = '';
+      for (const part of parts) {
+        const bare = part.endsWith('[]') ? part.slice(0, -2) : part;
+        acc = acc ? `${acc}.${bare}` : bare;
+        const containerField = fields.find(x => x.name === acc);
+        if (!containerField) continue;
+        if (isFieldVisible(containerField)) {
+          container = acc;
+          break;
+        }
+      }
+      if (!container) continue;
+      const list = map.get(container) ?? [];
+      list.push(f.name);
+      map.set(container, list);
+    }
+    return map;
+  }, [fields, isFieldVisible]);
 
   // Pre-compute reference indices for handle positioning
   const refFields = useMemo(
@@ -415,7 +634,12 @@ function SchemaNode({ data }: NodeProps<SchemaNodeType>) {
     if (!visibleTypeNames || !onReferenceClick) return false;
     return fields.some(f => {
       if (f.isCrossDatasetReference) return false;
-      if (!(f.isReference || f.type === 'reference')) return false;
+      // Include both real reference fields AND inline-object rows that point
+      // to a named object type — both render orphan lozenges when their
+      // target isn't on canvas.
+      const isRefRow = f.isReference || f.type === 'reference';
+      const isInlineRefRow = f.isInlineObject && !!f.referenceTo;
+      if (!isRefRow && !isInlineRefRow) return false;
       const targets = f.referenceTargets && f.referenceTargets.length > 0
         ? f.referenceTargets
         : (f.referenceTo ? [f.referenceTo] : []);
@@ -448,7 +672,11 @@ function SchemaNode({ data }: NodeProps<SchemaNodeType>) {
 
   return (
     <div
-      className={"rounded-md border bg-card text-card-foreground min-w-[200px] max-w-[280px]" + (hasOrphanedRefs || hasCrossDatasetRefs ? " mr-[130px]" : "")}
+      className={
+        "rounded-md border bg-card text-card-foreground min-w-[200px] max-w-[280px]" +
+        (isObjectNode ? " border-amber-300 dark:border-amber-700" : "") +
+        (hasOrphanedRefs || hasCrossDatasetRefs ? " mr-[130px]" : "")
+      }
       style={{
         overflow: hasOrphanedRefs || hasCrossDatasetRefs ? 'visible' : 'hidden',
         position: 'relative',
@@ -490,16 +718,31 @@ function SchemaNode({ data }: NodeProps<SchemaNodeType>) {
       />
 
       {/* ---- Header ---- */}
-      <div className="flex items-center justify-between gap-2 border-b bg-muted/70 px-3 py-2">
+      <div
+        className={
+          "flex items-center justify-between gap-2 border-b px-3 py-2 " +
+          (isObjectNode ? "bg-amber-50 dark:bg-amber-950/30" : "bg-muted/70")
+        }
+      >
         <span className="truncate text-sm font-medium" title={typeName}>
           {typeName}
         </span>
-        <Badge
-          variant="secondary"
-          className="shrink-0 tabular-nums text-[10px] px-1.5 py-0 leading-4 bg-white text-black dark:bg-gray-800 dark:text-gray-200"
-        >
-          {documentCount.toLocaleString()}
-        </Badge>
+        {isObjectNode ? (
+          <Badge
+            variant="secondary"
+            className="shrink-0 text-[10px] px-1.5 py-0 leading-4 bg-amber-100 text-amber-900 hover:bg-amber-100 dark:bg-amber-900/50 dark:hover:bg-amber-900/50 dark:text-amber-100 font-medium"
+          >
+            OBJECT
+          </Badge>
+        ) : (
+          <Badge
+            variant="secondary"
+            className="shrink-0 text-[10px] px-1.5 py-0 leading-4 bg-white text-slate-700 border-0 hover:bg-white dark:bg-slate-900 dark:hover:bg-slate-900 dark:text-slate-200 font-medium"
+          >
+            <span className="opacity-60 mr-1">DOC</span>
+            <span className="tabular-nums">{documentCount.toLocaleString()}</span>
+          </Badge>
+        )}
       </div>
 
       {/* ---- Field list ---- */}
@@ -509,23 +752,34 @@ function SchemaNode({ data }: NodeProps<SchemaNodeType>) {
             No fields discovered
           </div>
         )}
-        {fields.map((field, i) => (
-          <FieldRow
-            key={field.name}
-            field={field}
-            index={i}
-            totalRefs={totalRefs}
-            refIndex={refFields[field.name] ?? -1}
-            onReferenceClick={onReferenceClick}
-            onCrossDatasetNavigate={onCrossDatasetNavigate}
-            onMediaLibraryClick={onMediaLibraryClick}
-            onInaccessibleClick={onInaccessibleClick}
-            accessibleProjectIds={accessibleProjectIds}
-            visibleTypeNames={visibleTypeNames}
-            sourceTypeName={typeName}
-            onMultiTargetOpenChange={handleMultiTargetOpenChange}
-          />
-        ))}
+        {visibleFields.map((field, i) => {
+          const depth = field.parentPath ? field.parentPath.split('.').length : 0;
+          const isContainer = !!field.containerKind;
+          const containerOpen = isContainer ? openPaths.has(field.name) : false;
+          return (
+            <FieldRow
+              key={field.name}
+              field={field}
+              index={i}
+              totalRefs={totalRefs}
+              refIndex={refFields[field.name] ?? -1}
+              onReferenceClick={onReferenceClick}
+              onCrossDatasetNavigate={onCrossDatasetNavigate}
+              onMediaLibraryClick={onMediaLibraryClick}
+              onInaccessibleClick={onInaccessibleClick}
+              accessibleProjectIds={accessibleProjectIds}
+              visibleTypeNames={visibleTypeNames}
+              typeKinds={typeKinds}
+              sourceTypeName={typeName}
+              onMultiTargetOpenChange={handleMultiTargetOpenChange}
+              indentLevel={depth}
+              isContainer={isContainer}
+              isOpen={containerOpen}
+              onToggleContainer={isContainer && onToggleTransient ? () => onToggleTransient(field.name) : undefined}
+              hiddenChildRefs={isContainer && !containerOpen ? hiddenRefHandles.get(field.name) : undefined}
+            />
+          );
+        })}
       </div>
     </div>
   );

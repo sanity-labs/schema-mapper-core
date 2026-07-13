@@ -27,7 +27,7 @@ import { TbFocus2, TbArrowsMaximize } from 'react-icons/tb'
 // GrContract/GrExpand removed — FocusBar now uses TbFocus2/TbArrowsMaximize to match context menu
 import { GoArrowLeft } from 'react-icons/go'
 import { useDarkMode } from '../hooks/useDarkMode'
-import SchemaNode, { SCHEMA_NODE_TYPE, type SchemaNodeData } from './SchemaNode'
+import SchemaNode, { SCHEMA_NODE_TYPE, type SchemaNodeData, ExpandContext } from './SchemaNode'
 import FloatingEdge from './FloatingEdge'
 import type { DiscoveredField, DiscoveredType } from '../types'
 
@@ -653,6 +653,16 @@ function buildNodesAndEdges(
   edges: SchemaEdge[]
 } {
   const typeNames = new Set(types.map((t) => t.name))
+  // Kind lookup for orphan-lozenge coloring. If caller passed a fuller map
+  // via extraNodeData.typeKinds (which they should, computed from the full
+  // types list — not just the filtered subset), we use that. Otherwise we
+  // fall back to what we can see in the local `types`.
+  const localTypeKinds: Record<string, 'document' | 'object'> = {}
+  for (const t of types) localTypeKinds[t.name] = t.kind || 'document'
+  const typeKinds: Record<string, 'document' | 'object'> = {
+    ...localTypeKinds,
+    ...(extraNodeData?.typeKinds || {}),
+  }
 
   const nodes: SchemaNode_RF[] = types.map((type, index) => ({
     id: type.name,
@@ -662,12 +672,18 @@ function buildNodesAndEdges(
       typeName: type.name,
       documentCount: type.documentCount,
       fields: type.fields,
+      kind: type.kind,
+      typeKinds,
       ...extraNodeData,
       // Compute per-node: does this node have orphaned refs that add right margin?
       orphanedRefPadding: extraNodeData?.visibleTypeNames
         ? type.fields.some(f => {
             if (f.isCrossDatasetReference) return true
-            if (!(f.isReference || f.type === 'reference')) return false
+            // Include inline-object rows too — they render orphan lozenges
+            // now that the pivot puts named object types on their own nodes.
+            const isRefRow = f.isReference || f.type === 'reference'
+            const isInlineRefRow = f.isInlineObject && !!f.referenceTo
+            if (!isRefRow && !isInlineRefRow) return false
             const targets = f.referenceTargets && f.referenceTargets.length > 0
               ? f.referenceTargets
               : (f.referenceTo ? [f.referenceTo] : [])
@@ -681,10 +697,19 @@ function buildNodesAndEdges(
     },
   }))
 
-  // Distinct colors for edges — one per source type
+  // Distinct colors for edges. Two rules:
+  //   1. Edges targeting an object-kind type ALWAYS use amber, matching the
+  //      amber-bordered object nodes. This gives a real semantic cue.
+  //   2. Edges targeting a document-kind type use a per-source-type colour
+  //      chosen by hashing `type.name` into the palette below. Hashing makes
+  //      the palette deterministic: the same source type gets the same colour
+  //      in every viewer (customer app, internal, any future replay), and
+  //      regardless of whether the current view is the full graph or a focus
+  //      subset. Insertion-order palette assignment (the previous behaviour)
+  //      caused the same submission to look different in different apps.
+  const OBJECT_EDGE_COLOR = '#f59e0b' // amber, matches object node border
   const edgeColors = [
     '#6366f1', // indigo
-    '#f59e0b', // amber
     '#10b981', // emerald
     '#ef4444', // red
     '#8b5cf6', // violet
@@ -694,8 +719,16 @@ function buildNodesAndEdges(
     '#14b8a6', // teal
     '#a855f7', // purple
   ]
-  const sourceColorMap = new Map<string, string>()
-  let colorIdx = 0
+
+  // Deterministic per-name colour from the palette: same source name always
+  // maps to the same palette slot in every viewer, regardless of iteration
+  // order or visible subset. Simple djb2-style hash — good distribution over
+  // short strings, no crypto required.
+  const colorForSource = (name: string): string => {
+    let h = 5381
+    for (let i = 0; i < name.length; i++) h = ((h << 5) + h + name.charCodeAt(i)) | 0
+    return edgeColors[Math.abs(h) % edgeColors.length]
+  }
 
   const edges: SchemaEdge[] = []
 
@@ -712,14 +745,14 @@ function buildNodesAndEdges(
       const visibleTargets = allTargets.filter((t) => typeNames.has(t))
       if (visibleTargets.length === 0) return
 
-      if (!sourceColorMap.has(type.name)) {
-        sourceColorMap.set(type.name, edgeColors[colorIdx % edgeColors.length])
-        colorIdx++
-      }
-      const color = sourceColorMap.get(type.name)!
       const isInline = field.isInlineObject
 
       visibleTargets.forEach((target) => {
+        // Colour rule: edges to object-kind targets are always amber (matches
+        // the amber-bordered object nodes). Edges to document-kind targets
+        // use a deterministic per-source-name palette colour.
+        const isObjectTarget = typeKinds[target] === 'object'
+        const color = isObjectTarget ? OBJECT_EDGE_COLOR : colorForSource(type.name)
         edges.push({
           id: `${type.name}-${field.name}->${target}`,
           source: type.name,
@@ -802,6 +835,10 @@ function GraphControls({
   hasOriginalPositions = false,
   disabled = false,
   curatedActive = false,
+  expandObjects = false,
+  expandArrays = false,
+  onExpandObjectsChange,
+  onExpandArraysChange,
 }: {
   layout: LayoutType
   onLayoutChange: (layout: LayoutType) => void
@@ -814,6 +851,10 @@ function GraphControls({
   disabled?: boolean
   /** When true, no algo tab is shown as selected — the app-level curated layout is in charge. */
   curatedActive?: boolean
+  expandObjects?: boolean
+  expandArrays?: boolean
+  onExpandObjectsChange?: (value: boolean) => void
+  onExpandArraysChange?: (value: boolean) => void
 }) {
   const layouts: LayoutType[] = hasOriginalPositions
     ? ['original', 'dagre', 'layered', 'force', 'stress']
@@ -844,28 +885,48 @@ function GraphControls({
           />
         ))}
       </div>
-      {layout !== 'original' && (
-      <div className="flex items-center gap-3 px-1">
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-gray-500 dark:text-gray-400">Spacing</span>
+      <div className="grid grid-cols-[auto_1fr_auto] items-center gap-x-3 gap-y-3 px-1 mt-2 text-xs text-gray-500 dark:text-gray-400">
+        {layout !== 'original' && (
+          <>
+            <span>Spacing</span>
+            <input
+              type="range"
+              min="10"
+              max="500"
+              value={Math.round(spacing * 100)}
+              onChange={(e) => onSpacingChange(Number(e.target.value) / 100)}
+              className="w-32 h-1 accent-gray-700 justify-self-start"
+            />
+            <button
+              onClick={onResetSpacing}
+              className="text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 transition-colors justify-self-end"
+              title="Reset to default"
+            >
+              <RxReset className="text-xs" />
+            </button>
+          </>
+        )}
+        <span aria-hidden="true" />
+        <label className="col-span-2 flex items-center gap-1 cursor-pointer select-none">
           <input
-            type="range"
-            min="10"
-            max="500"
-            value={Math.round(spacing * 100)}
-            onChange={(e) => onSpacingChange(Number(e.target.value) / 100)}
-            className="w-20 h-1 accent-gray-700"
+            type="checkbox"
+            checked={expandObjects}
+            onChange={(e) => onExpandObjectsChange?.(e.target.checked)}
+            className="w-3 h-3 accent-gray-700 cursor-pointer"
           />
-          <button
-            onClick={onResetSpacing}
-            className="text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 transition-colors"
-            title="Reset to default"
-          >
-            <RxReset className="text-xs" />
-          </button>
-        </div>
+          <span>Expand inline objects</span>
+        </label>
+        <span aria-hidden="true" />
+        <label className="col-span-2 flex items-center gap-1 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={expandArrays}
+            onChange={(e) => onExpandArraysChange?.(e.target.checked)}
+            className="w-3 h-3 accent-gray-700 cursor-pointer"
+          />
+          <span>Expand inline arrays</span>
+        </label>
       </div>
-      )}
     </div>
   )
 }
@@ -878,6 +939,9 @@ interface SchemaGraphInnerProps {
   types: DiscoveredType[]
   initialPositions?: Record<string, { x: number; y: number }>
   initialEdgeStyle?: EdgeStyle
+  initialExpandObjects?: boolean
+  initialExpandArrays?: boolean
+  initialTransientExpanded?: string[]
   onStateChange?: (state: SchemaGraphState) => void
   fitViewTrigger?: number
   initialFocusState?: { typeName: string; depth: 0 | 1 | 2 }
@@ -919,6 +983,9 @@ function SchemaGraphInner({
   types,
   initialPositions,
   initialEdgeStyle,
+  initialExpandObjects,
+  initialExpandArrays,
+  initialTransientExpanded,
   onStateChange,
   fitViewTrigger,
   initialFocusState,
@@ -952,7 +1019,7 @@ function SchemaGraphInner({
     if (fitViewTrigger != null && fitViewTrigger !== fitViewTriggerRef.current) {
       fitViewTriggerRef.current = fitViewTrigger
       // Small delay to let container finish resizing
-      const timer = setTimeout(() => fitView({ padding: 0.12, duration: 300 }), 50)
+      const timer = setTimeout(() => fitView({ padding: 0.22, duration: 300 }), 50)
       return () => clearTimeout(timer)
     }
   }, [fitViewTrigger, fitView])
@@ -1023,6 +1090,92 @@ function SchemaGraphInner({
 
   const edgeStyleRef = useRef(edgeStyle)
   edgeStyleRef.current = edgeStyle
+
+  // Full-schema kind lookup so orphan lozenges color correctly even when
+  // the target isn't in the currently-rendered subset (focus mode). Built
+  // from the full types prop; passed into every buildNodesAndEdges call
+  // via extraNodeData.typeKinds.
+  const fullTypeKinds = useMemo(() => {
+    const map: Record<string, 'document' | 'object'> = {}
+    for (const t of types) map[t.name] = t.kind || 'document'
+    return map
+  }, [types])
+
+  // Expand-mode state — controls whether nested object/array fields render
+  // inline (indented rows) vs collapsed to their parent row. Per-node
+  // transient overrides live in `transientExpanded` (field paths that have
+  // been individually toggled). See feature/expand-toggles for the full
+  // spec.
+  const [expandObjects, setExpandObjectsState] = useState<boolean>(() => {
+    if (initialExpandObjects !== undefined) return initialExpandObjects
+    try {
+      const saved = localStorage.getItem('schema-mapper:expandObjects')
+      if (saved !== null) return saved === 'true'
+    } catch {}
+    return false
+  })
+  const [expandArrays, setExpandArraysState] = useState<boolean>(() => {
+    if (initialExpandArrays !== undefined) return initialExpandArrays
+    try {
+      const saved = localStorage.getItem('schema-mapper:expandArrays')
+      if (saved !== null) return saved === 'true'
+    } catch {}
+    return false
+  })
+  const [transientExpanded, setTransientExpanded] = useState<string[]>(
+    () => initialTransientExpanded ?? [],
+  )
+
+  const setExpandObjects = useCallback((v: boolean) => {
+    setExpandObjectsState(v)
+    try {
+      localStorage.setItem('schema-mapper:expandObjects', String(v))
+    } catch {}
+    // Setting change is a "big change" — clear transient overrides.
+    setTransientExpanded([])
+  }, [])
+  const setExpandArrays = useCallback((v: boolean) => {
+    setExpandArraysState(v)
+    try {
+      localStorage.setItem('schema-mapper:expandArrays', String(v))
+    } catch {}
+    setTransientExpanded([])
+  }, [])
+
+  const expandObjectsRef = useRef(expandObjects)
+  expandObjectsRef.current = expandObjects
+  const expandArraysRef = useRef(expandArrays)
+  expandArraysRef.current = expandArrays
+  const transientExpandedRef = useRef(transientExpanded)
+  transientExpandedRef.current = transientExpanded
+
+  // Toggle a transient container expansion. Keys are `${typeName}::${fieldPath}`
+  // so identically-named fields in different types don't collide. Toggling
+  // adds the key if absent, removes it if present.
+  const handleToggleTransient = useCallback((typeName: string, fieldPath: string) => {
+    const key = `${typeName}::${fieldPath}`
+    setTransientExpanded((prev) => {
+      if (prev.includes(key)) return prev.filter((k) => k !== key)
+      return [...prev, key]
+    })
+  }, [])
+
+  // Stable Set instance for context — recomputed only when the underlying
+  // array changes. Prevents re-renders in every SchemaNode on unrelated state.
+  const transientExpandedSet = useMemo(
+    () => new Set(transientExpanded),
+    [transientExpanded],
+  )
+
+  const expandContextValue = useMemo<React.ContextType<typeof ExpandContext>>(
+    () => ({
+      expandObjects,
+      expandArrays,
+      transientExpanded: transientExpandedSet,
+      onToggleTransient: handleToggleTransient,
+    }),
+    [expandObjects, expandArrays, transientExpandedSet, handleToggleTransient],
+  )
 
   // Stable ref for onCrossDatasetNavigate to avoid rebuild cascades
   const onCrossDatasetNavigateRef = useRef(onCrossDatasetNavigate)
@@ -1126,7 +1279,7 @@ function SchemaGraphInner({
   const preFocusEdgesRef = useRef<SchemaEdge[] | null>(null)
 
   const { nodes: initialNodes, edges: initialEdges } = useMemo(
-    () => buildNodesAndEdges(types, edgeStyleRef.current, { onCrossDatasetNavigate: onCrossDatasetNavigateRef.current, onMediaLibraryClick: onMediaLibraryClickRef.current, onInaccessibleClick: onInaccessibleClickRef.current, accessibleProjectIds }),
+    () => buildNodesAndEdges(types, edgeStyleRef.current, { onCrossDatasetNavigate: onCrossDatasetNavigateRef.current, onMediaLibraryClick: onMediaLibraryClickRef.current, onInaccessibleClick: onInaccessibleClickRef.current, accessibleProjectIds, typeKinds: fullTypeKinds }),
     [types],
   )
 
@@ -1190,6 +1343,7 @@ function SchemaGraphInner({
           onInaccessibleClick: onInaccessibleClickRef.current,
           accessibleProjectIds,
           visibleTypeNames: visibleNames,
+          typeKinds: fullTypeKinds,
         })
         setNodes(subsetNodes)
         setEdges(subsetEdges)
@@ -1200,7 +1354,7 @@ function SchemaGraphInner({
     }
 
     setFocusState(null)
-    const { nodes: newNodes, edges: newEdges } = buildNodesAndEdges(types, edgeStyleRef.current, { onCrossDatasetNavigate: onCrossDatasetNavigateRef.current, onMediaLibraryClick: onMediaLibraryClickRef.current, onInaccessibleClick: onInaccessibleClickRef.current, accessibleProjectIds })
+    const { nodes: newNodes, edges: newEdges } = buildNodesAndEdges(types, edgeStyleRef.current, { onCrossDatasetNavigate: onCrossDatasetNavigateRef.current, onMediaLibraryClick: onMediaLibraryClickRef.current, onInaccessibleClick: onInaccessibleClickRef.current, accessibleProjectIds, typeKinds: fullTypeKinds })
     setNodes(newNodes)
     setEdges(newEdges)
     setLayoutApplied(false)
@@ -1229,8 +1383,11 @@ function SchemaGraphInner({
       viewport: viewportRef.current,
       edgeStyle,
       spacing,
+      expandObjects,
+      expandArrays,
+      transientExpanded,
     })
-  }, [focusState, isSearching, nodes.length, onStateChange, edgeStyle, spacing])
+  }, [focusState, isSearching, nodes.length, onStateChange, edgeStyle, spacing, expandObjects, expandArrays, transientExpanded])
 
   const handleSearchChange = useCallback((query: string) => {
     setSearchQuery(query)
@@ -1245,7 +1402,7 @@ function SchemaGraphInner({
     if (!query.trim()) {
       // Restore full graph with user's layout
       searchLayoutOverrideRef.current = null
-      const { nodes: newNodes, edges: newEdges } = buildNodesAndEdges(types, edgeStyleRef.current, { onCrossDatasetNavigate: onCrossDatasetNavigateRef.current, onMediaLibraryClick: onMediaLibraryClickRef.current, onInaccessibleClick: onInaccessibleClickRef.current, accessibleProjectIds })
+      const { nodes: newNodes, edges: newEdges } = buildNodesAndEdges(types, edgeStyleRef.current, { onCrossDatasetNavigate: onCrossDatasetNavigateRef.current, onMediaLibraryClick: onMediaLibraryClickRef.current, onInaccessibleClick: onInaccessibleClickRef.current, accessibleProjectIds, typeKinds: fullTypeKinds })
       setNodes(newNodes)
       setEdges(newEdges)
       setLayoutApplied(false)
@@ -1257,7 +1414,7 @@ function SchemaGraphInner({
       (t.title && t.title.toLowerCase().includes(q)) ||
       t.fields.some(f => f.name.toLowerCase().includes(q))
     )
-    const { nodes: subsetNodes, edges: subsetEdges } = buildNodesAndEdges(filtered, edgeStyleRef.current, { onCrossDatasetNavigate: onCrossDatasetNavigateRef.current, onMediaLibraryClick: onMediaLibraryClickRef.current, onInaccessibleClick: onInaccessibleClickRef.current, accessibleProjectIds })
+    const { nodes: subsetNodes, edges: subsetEdges } = buildNodesAndEdges(filtered, edgeStyleRef.current, { onCrossDatasetNavigate: onCrossDatasetNavigateRef.current, onMediaLibraryClick: onMediaLibraryClickRef.current, onInaccessibleClick: onInaccessibleClickRef.current, accessibleProjectIds, typeKinds: fullTypeKinds })
     setNodes(subsetNodes)
     setEdges(subsetEdges)
     // Force layered layout with default spacing for search results
@@ -1268,7 +1425,7 @@ function SchemaGraphInner({
   const handleSearchClear = useCallback(() => {
     setSearchQuery('')
     searchLayoutOverrideRef.current = null
-    const { nodes: newNodes, edges: newEdges } = buildNodesAndEdges(types, edgeStyleRef.current, { onCrossDatasetNavigate: onCrossDatasetNavigateRef.current, onMediaLibraryClick: onMediaLibraryClickRef.current, onInaccessibleClick: onInaccessibleClickRef.current, accessibleProjectIds })
+    const { nodes: newNodes, edges: newEdges } = buildNodesAndEdges(types, edgeStyleRef.current, { onCrossDatasetNavigate: onCrossDatasetNavigateRef.current, onMediaLibraryClick: onMediaLibraryClickRef.current, onInaccessibleClick: onInaccessibleClickRef.current, accessibleProjectIds, typeKinds: fullTypeKinds })
     setNodes(newNodes)
     setEdges(newEdges)
     setLayoutApplied(false)
@@ -1381,7 +1538,7 @@ function SchemaGraphInner({
       if (!skipFitViewRef.current) {
         window.requestAnimationFrame(() => {
           if (myGen !== applyLayoutGenRef.current) return
-          fitView({ padding: 0.12, duration: skipAnimation ? 0 : 300 })
+          fitView({ padding: 0.22, duration: skipAnimation ? 0 : 300 })
         })
       }
     } catch (err) {
@@ -1577,7 +1734,7 @@ function SchemaGraphInner({
       setEdgeStyle(initialEdgeStyle)
       edgeStyleRef.current = initialEdgeStyle
       // Rebuild edges with the restored style so they render correctly
-      const { nodes: rebuiltNodes, edges: rebuiltEdges } = buildNodesAndEdges(types, initialEdgeStyle, { onCrossDatasetNavigate: onCrossDatasetNavigateRef.current, onMediaLibraryClick: onMediaLibraryClickRef.current, onInaccessibleClick: onInaccessibleClickRef.current, accessibleProjectIds })
+      const { nodes: rebuiltNodes, edges: rebuiltEdges } = buildNodesAndEdges(types, initialEdgeStyle, { onCrossDatasetNavigate: onCrossDatasetNavigateRef.current, onMediaLibraryClick: onMediaLibraryClickRef.current, onInaccessibleClick: onInaccessibleClickRef.current, accessibleProjectIds, typeKinds: fullTypeKinds })
       setNodes(rebuiltNodes)
       setEdges(rebuiltEdges)
       applyLayout(rebuiltNodes, rebuiltEdges, newLayout, spacingMap[newLayout])
@@ -1586,7 +1743,7 @@ function SchemaGraphInner({
     // When switching away from original+initialFocusState, rebuild full graph
     // BUT only if user hasn't manually focused a type (focusState is active user focus)
     if (newLayout !== 'original' && initialFocusState && !focusState) {
-      const { nodes: fullNodes, edges: fullEdges } = buildNodesAndEdges(types, edgeStyleRef.current, { onCrossDatasetNavigate: onCrossDatasetNavigateRef.current, onMediaLibraryClick: onMediaLibraryClickRef.current, onInaccessibleClick: onInaccessibleClickRef.current, accessibleProjectIds })
+      const { nodes: fullNodes, edges: fullEdges } = buildNodesAndEdges(types, edgeStyleRef.current, { onCrossDatasetNavigate: onCrossDatasetNavigateRef.current, onMediaLibraryClick: onMediaLibraryClickRef.current, onInaccessibleClick: onInaccessibleClickRef.current, accessibleProjectIds, typeKinds: fullTypeKinds })
       setNodes(fullNodes)
       setEdges(fullEdges)
       applyLayout(fullNodes, fullEdges, newLayout, spacingMap[newLayout])
@@ -1619,7 +1776,7 @@ function SchemaGraphInner({
     if (searchQuery.trim()) {
       setSearchQuery('')
       searchLayoutOverrideRef.current = null
-      const { nodes: fullNodes, edges: fullEdges } = buildNodesAndEdges(types, edgeStyleRef.current, { onCrossDatasetNavigate: onCrossDatasetNavigateRef.current, onMediaLibraryClick: onMediaLibraryClickRef.current, onInaccessibleClick: onInaccessibleClickRef.current, accessibleProjectIds })
+      const { nodes: fullNodes, edges: fullEdges } = buildNodesAndEdges(types, edgeStyleRef.current, { onCrossDatasetNavigate: onCrossDatasetNavigateRef.current, onMediaLibraryClick: onMediaLibraryClickRef.current, onInaccessibleClick: onInaccessibleClickRef.current, accessibleProjectIds, typeKinds: fullTypeKinds })
       preFocusNodesRef.current = fullNodes
       preFocusEdgesRef.current = fullEdges as SchemaEdge[]
     } else if (!focusState) {
@@ -1655,6 +1812,7 @@ function SchemaGraphInner({
       onInaccessibleClick: onInaccessibleClickRef.current,
       accessibleProjectIds,
       visibleTypeNames: visibleNames,
+          typeKinds: fullTypeKinds,
     })
 
     setNodes(subsetNodes)
@@ -1752,6 +1910,7 @@ function SchemaGraphInner({
   }, [focusState, handleExitFocus])
 
   return (
+    <ExpandContext.Provider value={expandContextValue}>
     <div ref={containerRef} className={`relative w-full h-full ${curatedActive && !curatedEditable && !curatedReadOnly ? 'schema-graph-locked' : ''} ${curatedActive && curatedReadOnly ? 'schema-graph-readonly' : ''}`}>
       <style>{`
         /* Locked curated layout: node body shows the "no-touch" cursor,
@@ -1784,7 +1943,7 @@ function SchemaGraphInner({
           cursor: pointer !important;
         }
       `}</style>
-      <GraphControls layout={layoutType} onLayoutChange={handleLayoutChange} edgeStyle={edgeStyle} onEdgeStyleChange={handleEdgeStyleChange} spacing={spacing} onSpacingChange={handleSpacingChange} onResetSpacing={handleResetSpacing} hasOriginalPositions={!!initialPositions && Object.keys(initialPositions).length > 0} disabled={isSearching} curatedActive={!!curatedActive} />
+      <GraphControls layout={layoutType} onLayoutChange={handleLayoutChange} edgeStyle={edgeStyle} onEdgeStyleChange={handleEdgeStyleChange} spacing={spacing} onSpacingChange={handleSpacingChange} onResetSpacing={handleResetSpacing} hasOriginalPositions={!!initialPositions && Object.keys(initialPositions).length > 0} disabled={isSearching} curatedActive={!!curatedActive} expandObjects={expandObjects} expandArrays={expandArrays} onExpandObjectsChange={setExpandObjects} onExpandArraysChange={setExpandArrays} />
       {isLayouting && (
         <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10 bg-white/90 dark:bg-gray-900/90 backdrop-blur-sm border rounded-md px-3 py-1 text-xs text-gray-500 dark:text-gray-400">
           Layouting…
@@ -1841,6 +2000,7 @@ function SchemaGraphInner({
         edgeTypes={edgeTypes}
         colorMode={isDark ? 'dark' : 'light'}
         fitView
+        fitViewOptions={{ padding: 0.22 }}
         panOnScroll
         zoomOnScroll={false}
         zoomOnPinch
@@ -1916,6 +2076,7 @@ function SchemaGraphInner({
         />
       )}
     </div>
+    </ExpandContext.Provider>
   )
 }
 
@@ -1933,12 +2094,24 @@ export interface SchemaGraphState {
   edgeStyle?: 'bezier' | 'step' | 'straight'
   /** Current spacing multiplier — surfaced for curated-layout auto-save */
   spacing?: number
+  /** Whether objects render inline expanded (vs collapsed to parent row) */
+  expandObjects?: boolean
+  /** Whether arrays render inline expanded (vs collapsed to parent row) */
+  expandArrays?: boolean
+  /** Per-row transient overrides — field paths that have been toggled individually */
+  transientExpanded?: string[]
 }
 
 export interface SchemaGraphProps {
   types: DiscoveredType[]
   initialPositions?: Record<string, { x: number; y: number }>
   initialEdgeStyle?: 'bezier' | 'step' | 'straight'
+  /** Preload expand-objects toggle from persisted view/payload. Undefined = read localStorage default. */
+  initialExpandObjects?: boolean
+  /** Preload expand-arrays toggle from persisted view/payload. Undefined = read localStorage default. */
+  initialExpandArrays?: boolean
+  /** Preload per-row transient expansions (field paths). */
+  initialTransientExpanded?: string[]
   onStateChange?: (state: SchemaGraphState) => void
   /** Increment to trigger a smooth fitView (e.g. after container resize) */
   fitViewTrigger?: number
