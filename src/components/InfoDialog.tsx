@@ -1,4 +1,3 @@
-import { ReactNode } from 'react'
 import { Dialog, Box } from '@sanity/ui'
 import type { ReactNode } from 'react'
 
