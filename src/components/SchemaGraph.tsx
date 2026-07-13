@@ -1016,7 +1016,8 @@ function SchemaGraphInner({
   const __effLog = (name: string) => {
     const n = (__effCounts.current[name] || 0) + 1
     __effCounts.current[name] = n
-    if (n === 1 || n === 5 || n === 20 || n % 100 === 0) console.log('[SG.effect count]', name, '=', n)
+    // Log every firing for the first 30, then thin out
+    if (n <= 30 || n % 25 === 0) console.log('[SG.effect count]', name, '=', n)
   }
 
   const containerRef = useRef<HTMLDivElement>(null)
