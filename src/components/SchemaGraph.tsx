@@ -1019,6 +1019,11 @@ function SchemaGraphInner({
     // Log every firing for the first 30, then thin out
     if (n <= 30 || n % 25 === 0) console.log('[SG.effect count]', name, '=', n)
   }
+  const __renderCountRef = useRef(0)
+  __renderCountRef.current++
+  if (__renderCountRef.current <= 40 || __renderCountRef.current % 25 === 0) {
+    console.log('[SG.render]', __renderCountRef.current)
+  }
 
   const containerRef = useRef<HTMLDivElement>(null)
 
