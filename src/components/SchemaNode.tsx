@@ -347,11 +347,22 @@ function FieldRow({
       {/* Chevron for container stub rows */}
       {isContainer && (
         <span
-          className="shrink-0 text-xl text-indigo-600 dark:text-indigo-400 select-none font-semibold flex items-center"
-          style={{ lineHeight: 0, transform: 'translateY(-1px)' }}
+          className="shrink-0 text-indigo-600 dark:text-indigo-400 select-none flex items-center"
+          style={{ transform: 'translateY(-1px)' }}
           aria-hidden="true"
         >
-          {isOpen ? '▾' : '▸'}
+          {isOpen ? (
+            // ▾ chevron-down as inline SVG — reliable in exported SVG
+            // (font-based ▾/▸ glyphs get mangled to notdef by external renderers)
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+              <path d="M1 3 L5 8 L9 3 Z" />
+            </svg>
+          ) : (
+            // ▸ chevron-right as inline SVG
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+              <path d="M3 1 L8 5 L3 9 Z" />
+            </svg>
+          )}
         </span>
       )}
 
@@ -360,10 +371,14 @@ function FieldRow({
           themselves already have the chevron. */}
       {indentLevel > 0 && !isContainer && (
         <span
-          className="shrink-0 text-gray-400 dark:text-gray-600 select-none font-mono text-sm leading-none"
+          className="shrink-0 text-gray-400 dark:text-gray-600 select-none flex items-center"
           aria-hidden="true"
         >
-          ↳
+          {/* ↳ hooked-arrow as inline SVG — reliable in exported SVG */}
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg">
+            <path d="M3 2 L3 8 L9 8" />
+            <path d="M7 6 L9 8 L7 10" />
+          </svg>
         </span>
       )}
 

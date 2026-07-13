@@ -467,14 +467,22 @@ export function ExportDropdown({ graphRef, context, types, onExport, extraMenuIt
       </button>
       {open && (
         <div className="absolute right-0 top-full mt-1 z-20 bg-white dark:bg-gray-800 rounded-lg shadow-lg py-1 min-w-[200px] border border-gray-200 dark:border-gray-700">
-          <button
-            onClick={handlePDF}
-            disabled={!!exporting}
-            className="w-full text-left px-3 py-1.5 text-xs text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50"
-          >
-            {exporting === 'pdf' ? 'Exporting…' : 'PDF (vector)'}
-          </button>
-          <div className="my-1 border-t border-gray-100 dark:border-gray-700" />
+          {/* PDF export intentionally hidden — SVG covers the vector-export
+              use case more reliably (jsPDF font handling was mangling
+              chevron/arrow glyphs). Keep handlePDF + jsPDF code intact in
+              case we bring it back later. */}
+          {false && (
+            <>
+              <button
+                onClick={handlePDF}
+                disabled={!!exporting}
+                className="w-full text-left px-3 py-1.5 text-xs text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50"
+              >
+                {exporting === 'pdf' ? 'Exporting…' : 'PDF (vector)'}
+              </button>
+              <div className="my-1 border-t border-gray-100 dark:border-gray-700" />
+            </>
+          )}
           <button
             onClick={handlePNG}
             disabled={!!exporting}
