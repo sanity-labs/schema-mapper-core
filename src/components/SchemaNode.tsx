@@ -127,9 +127,18 @@ function MultiTargetPopover({
   const wrapperRef = useRef<HTMLDivElement>(null);
 
   // Notify parent so it can bump the SchemaNode's z-index above siblings.
+  // NB: onOpenChange is a fresh arrow function every parent render (see the
+  // `(open) => onMultiTargetOpenChange?.(field.name, open)` inline callback
+  // at SchemaNode line ~446). If we include it in the effect deps, the
+  // effect refires every render, calls onOpenChange(false), triggers parent
+  // setState, new arrow identity, effect refires — infinite loop. Use a
+  // ref instead so we always call the LATEST callback but only fire on
+  // real `open` transitions.
+  const onOpenChangeRef = useRef(onOpenChange);
+  useEffect(() => { onOpenChangeRef.current = onOpenChange; });
   useEffect(() => {
-    onOpenChange?.(open);
-  }, [open, onOpenChange]);
+    onOpenChangeRef.current?.(open);
+  }, [open]);
 
   // Outside-click / Escape to close. Detect against the wrapper ref so a click
   // anywhere outside the lozenge cluster (including on other field rows in
@@ -660,6 +669,11 @@ function SchemaNode({ data }: NodeProps<SchemaNodeType>) {
   const handleMultiTargetOpenChange = useMemo(
     () => (fieldName: string, open: boolean) => {
       setOpenMultiTargets(prev => {
+        const has = prev.has(fieldName);
+        // Skip the setState if nothing actually changes. Otherwise every
+        // FieldRow's mount-effect (which calls this with open=false) forces
+        // a parent re-render → new callback identity → re-render loop.
+        if (open === has) return prev;
         const next = new Set(prev);
         if (open) next.add(fieldName);
         else next.delete(fieldName);
