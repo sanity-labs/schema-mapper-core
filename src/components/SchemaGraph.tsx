@@ -1454,6 +1454,7 @@ function SchemaGraphInner({
       )
       setNodes(subsetNodes)
       setEdges(subsetEdges)
+      console.log("[SG.relayout] L1457")
       setLayoutApplied(false)
       return
     }
@@ -1473,6 +1474,7 @@ function SchemaGraphInner({
         )
         setNodes(subsetNodes)
         setEdges(subsetEdges)
+        console.log("[SG.relayout] L1476")
         setLayoutApplied(false)
         return
       }
@@ -1488,6 +1490,7 @@ function SchemaGraphInner({
     )
     setNodes(newNodes)
     setEdges(newEdges)
+    console.log("[SG.relayout] L1491")
     setLayoutApplied(false)
     // focusState intentionally omitted from deps — we only read it to preserve
     // focus across excludeTypeNames toggles; including it would loop on focus.
@@ -1544,6 +1547,7 @@ function SchemaGraphInner({
       )
       setNodes(newNodes)
       setEdges(newEdges)
+      console.log("[SG.relayout] L1547")
       setLayoutApplied(false)
       return
     }
@@ -1558,6 +1562,7 @@ function SchemaGraphInner({
     setEdges(subsetEdges)
     // Force layered layout with default spacing for search results
     searchLayoutOverrideRef.current = { layout: 'layered', spacing: DEFAULT_SPACING.layered }
+    console.log("[SG.relayout] L1561")
     setLayoutApplied(false)
   }, [types, focusState, getDisplayTypes, buildGraphExtra, setNodes, setEdges])
 
@@ -1572,6 +1577,7 @@ function SchemaGraphInner({
     )
     setNodes(newNodes)
     setEdges(newEdges)
+    console.log("[SG.relayout] L1575")
     setLayoutApplied(false)
   }, [getDisplayTypes, buildGraphExtra, setNodes, setEdges])
 
@@ -1768,6 +1774,7 @@ function SchemaGraphInner({
       }
       // Force 'original' + trigger re-layout via layoutApplied=false.
       setLayoutType('original')
+      console.log("[SG.relayout] L1771")
       setLayoutApplied(false)
     } else if (prev) {
       // Curated cleared — pick the algo the caller wants us to run.
@@ -1799,6 +1806,7 @@ function SchemaGraphInner({
         }
       } catch {}
       setLayoutType(target)
+      console.log("[SG.relayout] L1802")
       setLayoutApplied(false)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1825,6 +1833,7 @@ function SchemaGraphInner({
     prevCuratedFingerprintRef.current = curatedFingerprint
     // Re-apply the layout so the fresh positions land.
     setLayoutType('original')
+    console.log("[SG.relayout] L1828")
     setLayoutApplied(false)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [curatedFingerprint])
@@ -1970,6 +1979,7 @@ function SchemaGraphInner({
     setEdges(subsetEdges)
 
     // Re-layout the subset
+    console.log("[SG.relayout] L1973")
     setLayoutApplied(false)
   }, [types, nodes, edges, focusState, searchQuery, layoutType, spacing, setNodes, setEdges, curatedActive, getDisplayTypes, buildGraphExtra])
   handleFocusRef.current = handleFocus
@@ -2034,6 +2044,7 @@ function SchemaGraphInner({
     preFocusEdgesRef.current = null
 
     // Trigger re-layout so the restored layout type is actually applied
+    console.log("[SG.relayout] L2037")
     setLayoutApplied(false)
   }, [setNodes, setEdges, types, accessibleProjectIds, getDisplayTypes, buildGraphExtra])
   handleExitFocusRef.current = handleExitFocus
