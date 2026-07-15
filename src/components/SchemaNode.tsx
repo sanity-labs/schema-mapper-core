@@ -44,6 +44,13 @@ export type SchemaNodeData = {
    * buildNodesAndEdges from the types array.
    */
   typeKinds?: Record<string, 'document' | 'object'>;
+  /**
+   * When true, this node represents a type that consumer config would
+   * normally hide (via hiddenDocumentTypes / hiddenFields / page-builder
+   * excludes). Rendered with a dashed border + desaturated fill so users
+   * can distinguish revealed-hidden nodes from regularly-visible ones.
+   */
+  isHidden?: boolean;
 };
 
 export type SchemaNodeType = Node<SchemaNodeData, 'schema'>;
@@ -538,7 +545,7 @@ function FieldRow({
 // ---------------------------------------------------------------------------
 
 function SchemaNode({ data }: NodeProps<SchemaNodeType>) {
-  const { typeName, documentCount, fields, kind, onReferenceClick, onCrossDatasetNavigate, onMediaLibraryClick, onInaccessibleClick, accessibleProjectIds, visibleTypeNames, typeKinds } = data;
+  const { typeName, documentCount, fields, kind, onReferenceClick, onCrossDatasetNavigate, onMediaLibraryClick, onInaccessibleClick, accessibleProjectIds, visibleTypeNames, typeKinds, isHidden } = data;
   const isObjectNode = kind === 'object';
   const expandCtx = useContext(ExpandContext);
   const expandObjects = expandCtx.expandObjects;
@@ -703,18 +710,24 @@ function SchemaNode({ data }: NodeProps<SchemaNodeType>) {
     <div
       className={
         "rounded-md border bg-card text-card-foreground min-w-[200px] max-w-[280px]" +
+        (isHidden ? " border-dashed" : "") +
         (isObjectNode ? " border-amber-300 dark:border-amber-700" : "") +
         (hasOrphanedRefs || hasCrossDatasetRefs ? " mr-[130px]" : "")
       }
       style={{
         overflow: hasOrphanedRefs || hasCrossDatasetRefs ? 'visible' : 'hidden',
         position: 'relative',
+        // "Show hidden" desaturation: reduced opacity + slight grey wash via
+        // filter. Keeps text readable but visibly recedes hidden nodes so
+        // they don't compete with regularly-visible ones.
+        ...(isHidden ? { opacity: 0.72, filter: 'saturate(0.55)' } : {}),
         // Lift this node above siblings when a multi-target lozenge cluster
         // is expanded. React Flow renders node containers with relative
         // positioning, so a positive z-index here puts everything (node body
         // + escaping lozenges) above other nodes/edges.
         ...(anyMultiTargetOpen ? { zIndex: 1000 } : {}),
       }}
+      title={isHidden ? 'Hidden by app config — revealed via Show hidden' : undefined}
     >
       {/* ---- Invisible handles on all 4 sides for floating edge connections ---- */}
       <Handle
