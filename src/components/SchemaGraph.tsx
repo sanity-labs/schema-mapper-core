@@ -1174,6 +1174,19 @@ function SchemaGraphInner({
     [types, filterExcluded],
   )
 
+  // Diagnostic: log identity of buildGraphExtra's deps every render
+  const _bgeDbg = useRef({ap: accessibleProjectIds, ex: excludeTypeNameSet, tk: fullTypeKinds, hi: hiddenTypeNames})
+  const _bgePrev = _bgeDbg.current
+  const _bgeChanges: string[] = []
+  if (_bgePrev.ap !== accessibleProjectIds) _bgeChanges.push('accessibleProjectIds')
+  if (_bgePrev.ex !== excludeTypeNameSet) _bgeChanges.push('excludeTypeNameSet')
+  if (_bgePrev.tk !== fullTypeKinds) _bgeChanges.push('fullTypeKinds')
+  if (_bgePrev.hi !== hiddenTypeNames) _bgeChanges.push('hiddenTypeNames')
+  if (_bgeChanges.length > 0) {
+    console.log('[SG.bgeChanged]', _bgeChanges)
+    _bgeDbg.current = {ap: accessibleProjectIds, ex: excludeTypeNameSet, tk: fullTypeKinds, hi: hiddenTypeNames}
+  }
+
   const buildGraphExtra = useCallback(
     (displayTypes: DiscoveredType[], withRefNav: boolean) => {
       const visibleTypeNames =
