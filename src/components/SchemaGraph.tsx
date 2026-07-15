@@ -1999,8 +1999,11 @@ function SchemaGraphInner({
   }, [handleFocus])
 
   const handleExitFocus = useCallback(() => {
-    // Clear cached focus and history for current types
-    focusCacheRef.current.delete(typesKey(types))
+    // Clear ALL cached focus (including any stashed under other type-set
+    // keys — e.g. from a prior Show-hidden toggle). Without this, toggling
+    // types-set back to a key that still has a cache entry would re-enter
+    // the focus the user just exited.
+    focusCacheRef.current.clear()
     focusHistoryRef.current = []
     setFocusState(null)
 
