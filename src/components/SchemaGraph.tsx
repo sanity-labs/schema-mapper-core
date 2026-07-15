@@ -1720,6 +1720,8 @@ function SchemaGraphInner({
   // Initial layout after nodes are measured
   useEffect(() => {
     if (nodesInitialized && !layoutApplied) {
+      // eslint-disable-next-line no-console
+      console.log('[SG initial-layout effect] firing — layoutType:', layoutType, 'nodes:', nodes.length)
       const override = searchLayoutOverrideRef.current
       if (override) {
         applyLayout(nodes as SchemaNode_RF[], edges, override.layout, override.spacing)
