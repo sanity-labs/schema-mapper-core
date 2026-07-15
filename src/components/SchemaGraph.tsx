@@ -1434,9 +1434,18 @@ function SchemaGraphInner({
     }
     prevTypesKeyRef.current = newKey
 
-    // Preserve in-progress focus across exclude toggles
-    const activeFocus = !typesChanged ? focusState : null
-    if (activeFocus && types.some(t => t.name === activeFocus.typeName)) {
+    // Preserve in-progress focus when:
+    //  - Types didn't change at all (exclude-toggle only tweaked what's
+    //    rendered inside), OR
+    //  - Types changed BUT the currently-focused type still exists in the
+    //    new set (e.g. "Show hidden" toggle revealed/hid a peer type but
+    //    the focused type is stable). Without this, toggling show-hidden
+    //    kicks the user out of focus every time.
+    const activeFocus =
+      focusState && types.some(t => t.name === focusState.typeName)
+        ? focusState
+        : null
+    if (activeFocus) {
       const filteredTypes = getDisplayTypes(activeFocus.typeName, activeFocus.depth)
       const { nodes: subsetNodes, edges: subsetEdges } = buildNodesAndEdges(
         filteredTypes,
