@@ -1441,10 +1441,22 @@ function SchemaGraphInner({
     //    new set (e.g. "Show hidden" toggle revealed/hid a peer type but
     //    the focused type is stable). Without this, toggling show-hidden
     //    kicks the user out of focus every time.
+    //
+    // Also honour `initialFocusState` (Submitted view's stored focus) when
+    // no live focus is set and no curated view is active. Otherwise
+    // toggling Show hidden on Submitted view causes a transient rebuild
+    // to ALL 107 types before applyLayout re-filters, which triggers a
+    // React Flow invariant violation that emits a null-message error and
+    // crashes the parent dashboard's error handler.
+    const submittedFocus =
+      !focusState && !curatedActiveRef.current && initialFocusState
+        && types.some(t => t.name === initialFocusState.typeName)
+        ? initialFocusState
+        : null
     const activeFocus =
       focusState && types.some(t => t.name === focusState.typeName)
         ? focusState
-        : null
+        : submittedFocus
     if (activeFocus) {
       const filteredTypes = getDisplayTypes(activeFocus.typeName, activeFocus.depth)
       const { nodes: subsetNodes, edges: subsetEdges } = buildNodesAndEdges(
@@ -1647,14 +1659,6 @@ function SchemaGraphInner({
       // positions verbatim", never re-layout.
       const useCuratedPositions = !!curatedActiveRef.current && originalPositions && Object.keys(originalPositions).length > 0
       if ((layout === 'original' || useCuratedPositions) && originalPositions && Object.keys(originalPositions).length > 0) {
-        console.log('[SG.applyOriginal]', {
-          layout,
-          useCuratedPositions,
-          nodeCount: currentNodes.length,
-          positionKeysCount: Object.keys(originalPositions).length,
-          nodesWithoutPosition: currentNodes.filter(n => !originalPositions[n.id]).map(n => n.id),
-          firstNodesShape: currentNodes.slice(0, 3).map(n => ({id: n.id, hasPos: !!n.position, x: n.position?.x, y: n.position?.y})),
-        })
         // When focused (either a live user focus, or the submitted initial
         // focus that hasn't been exited), filter the type set to that
         // neighbourhood before applying stored positions. Without this,
