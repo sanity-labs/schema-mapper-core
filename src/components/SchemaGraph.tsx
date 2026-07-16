@@ -647,7 +647,7 @@ function SearchBox({ query, onChange, onClear, resultCount, totalCount, offsetTo
 function buildNodesAndEdges(
   types: DiscoveredType[],
   edgeStyle: EdgeStyle = 'bezier',
-  extraNodeData?: Partial<SchemaNodeData>,
+  extraNodeData?: Partial<SchemaNodeData> & { hiddenTypeNames?: ReadonlySet<string> },
 ): {
   nodes: SchemaNode_RF[]
   edges: SchemaEdge[]
@@ -663,7 +663,8 @@ function buildNodesAndEdges(
     ...localTypeKinds,
     ...(extraNodeData?.typeKinds || {}),
   }
-
+  // Split hiddenTypeNames off — it's a per-node input, not per-node output.
+  const { hiddenTypeNames: _hiddenSet, ...restExtraNodeData } = extraNodeData ?? {}
   const nodes: SchemaNode_RF[] = types.map((type, index) => ({
     id: type.name,
     type: SCHEMA_NODE_TYPE as const,
@@ -674,7 +675,8 @@ function buildNodesAndEdges(
       fields: type.fields,
       kind: type.kind,
       typeKinds,
-      ...extraNodeData,
+      ...restExtraNodeData,
+      isHidden: _hiddenSet?.has(type.name) || false,
       // Compute per-node: does this node have orphaned refs that add right margin?
       orphanedRefPadding: extraNodeData?.visibleTypeNames
         ? type.fields.some(f => {
@@ -991,6 +993,15 @@ interface SchemaGraphInnerProps {
    * a lozenge to focus that type.
    */
   excludeTypeNames?: string[]
+  /**
+   * Names of types that should be marked as "hidden" in the graph — rendered
+   * with a dashed border and desaturated fill. Use when a "Show hidden"
+   * toggle reveals types the app's config normally strips: the graph shows
+   * them, but visually distinguishes them from regularly-visible nodes.
+   * Unlike `excludeTypeNames`, hidden types are still in the graph — this
+   * only affects their visual treatment.
+   */
+  hiddenTypeNames?: ReadonlySet<string>
 }
 
 function SchemaGraphInner({
@@ -1024,6 +1035,7 @@ function SchemaGraphInner({
   restoreFocusVersion,
   extraControls,
   excludeTypeNames,
+  hiddenTypeNames,
 }: SchemaGraphInnerProps) {
   const isDark = useDarkMode()
   const { fitView, getViewport, setViewport } = useReactFlow()
@@ -1174,6 +1186,13 @@ function SchemaGraphInner({
         onInaccessibleClick: onInaccessibleClickRef.current,
         accessibleProjectIds,
         typeKinds: fullTypeKinds,
+        // Not consumed by SchemaNode directly — buildNodesAndEdges reads
+        // this and resolves per-node isHidden. Kept as a field on
+        // extraNodeData rather than a separate arg to preserve the existing
+        // call signature.
+        ...(hiddenTypeNames && hiddenTypeNames.size > 0
+          ? { hiddenTypeNames }
+          : {}),
         ...(visibleTypeNames ? { visibleTypeNames } : {}),
         ...(withRefNav || excludeTypeNameSet.size > 0
           ? {
@@ -1183,7 +1202,7 @@ function SchemaGraphInner({
           : {}),
       }
     },
-    [accessibleProjectIds, excludeTypeNameSet, fullTypeKinds],
+    [accessibleProjectIds, excludeTypeNameSet, fullTypeKinds, hiddenTypeNames],
   )
 
   // Expand-mode state — controls whether nested object/array fields render
@@ -1415,9 +1434,30 @@ function SchemaGraphInner({
     }
     prevTypesKeyRef.current = newKey
 
-    // Preserve in-progress focus across exclude toggles
-    const activeFocus = !typesChanged ? focusState : null
-    if (activeFocus && types.some(t => t.name === activeFocus.typeName)) {
+    // Preserve in-progress focus when:
+    //  - Types didn't change at all (exclude-toggle only tweaked what's
+    //    rendered inside), OR
+    //  - Types changed BUT the currently-focused type still exists in the
+    //    new set (e.g. "Show hidden" toggle revealed/hid a peer type but
+    //    the focused type is stable). Without this, toggling show-hidden
+    //    kicks the user out of focus every time.
+    //
+    // Also honour `initialFocusState` (Submitted view's stored focus) when
+    // no live focus is set and no curated view is active. Otherwise
+    // toggling Show hidden on Submitted view causes a transient rebuild
+    // to ALL 107 types before applyLayout re-filters, which triggers a
+    // React Flow invariant violation that emits a null-message error and
+    // crashes the parent dashboard's error handler.
+    const submittedFocus =
+      !focusState && !curatedActiveRef.current && initialFocusState
+        && types.some(t => t.name === initialFocusState.typeName)
+        ? initialFocusState
+        : null
+    const activeFocus =
+      focusState && types.some(t => t.name === focusState.typeName)
+        ? focusState
+        : submittedFocus
+    if (activeFocus) {
       const filteredTypes = getDisplayTypes(activeFocus.typeName, activeFocus.depth)
       const { nodes: subsetNodes, edges: subsetEdges } = buildNodesAndEdges(
         filteredTypes,
@@ -1971,8 +2011,11 @@ function SchemaGraphInner({
   }, [handleFocus])
 
   const handleExitFocus = useCallback(() => {
-    // Clear cached focus and history for current types
-    focusCacheRef.current.delete(typesKey(types))
+    // Clear ALL cached focus (including any stashed under other type-set
+    // keys — e.g. from a prior Show-hidden toggle). Without this, toggling
+    // types-set back to a key that still has a cache entry would re-enter
+    // the focus the user just exited.
+    focusCacheRef.current.clear()
     focusHistoryRef.current = []
     setFocusState(null)
 
@@ -2326,6 +2369,13 @@ export interface SchemaGraphProps {
    * that point at excluded types remain visible as orphan lozenges.
    */
   excludeTypeNames?: string[]
+  /**
+   * Type names to render with dashed border + desaturated fill, marking them
+   * as "revealed hidden" — types the consumer's config would normally strip
+   * but a "Show hidden" toggle has surfaced them. Different from
+   * excludeTypeNames (which removes them entirely).
+   */
+  hiddenTypeNames?: ReadonlySet<string>
 }
 
 export function SchemaGraph(props: SchemaGraphProps) {
