@@ -1647,6 +1647,14 @@ function SchemaGraphInner({
       // positions verbatim", never re-layout.
       const useCuratedPositions = !!curatedActiveRef.current && originalPositions && Object.keys(originalPositions).length > 0
       if ((layout === 'original' || useCuratedPositions) && originalPositions && Object.keys(originalPositions).length > 0) {
+        console.log('[SG.applyOriginal]', {
+          layout,
+          useCuratedPositions,
+          nodeCount: currentNodes.length,
+          positionKeysCount: Object.keys(originalPositions).length,
+          nodesWithoutPosition: currentNodes.filter(n => !originalPositions[n.id]).map(n => n.id),
+          firstNodesShape: currentNodes.slice(0, 3).map(n => ({id: n.id, hasPos: !!n.position, x: n.position?.x, y: n.position?.y})),
+        })
         // When focused (either a live user focus, or the submitted initial
         // focus that hasn't been exited), filter the type set to that
         // neighbourhood before applying stored positions. Without this,
