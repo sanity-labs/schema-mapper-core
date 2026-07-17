@@ -1910,10 +1910,14 @@ function SchemaGraphInner({
     if (newLayout !== 'original' && initialFocusState && !focusState) {
       const __displayTypes = getDisplayTypes(null)
     const { nodes: fullNodes, edges: fullEdges } = buildNodesAndEdges(__displayTypes, edgeStyleRef.current, buildGraphExtra(__displayTypes, false))
+      // eslint-disable-next-line no-console
+      console.log('[SG.handleLayoutChange fullGraph]', { newLayout, typesLen: types.length, displayTypesLen: __displayTypes.length, fullNodesLen: fullNodes.length, currentNodesLen: nodes.length, initialFocus: initialFocusState, focusState })
       setNodes(fullNodes)
       setEdges(fullEdges)
       applyLayout(fullNodes, fullEdges, newLayout, spacingMap[newLayout])
     } else {
+      // eslint-disable-next-line no-console
+      console.log('[SG.handleLayoutChange elseBranch]', { newLayout, initialFocus: initialFocusState, focusState, nodesLen: nodes.length, typesLen: types.length })
       applyLayout(nodes as SchemaNode_RF[], edges, newLayout, spacingMap[newLayout])
     }
   }, [nodes, edges, spacingMap, applyLayout, debouncedApplyLayout, initialEdgeStyle, setEdgeStyle, initialFocusState, focusState, types, setNodes, setEdges, curatedActive, onCuratedExitForAlgo])
