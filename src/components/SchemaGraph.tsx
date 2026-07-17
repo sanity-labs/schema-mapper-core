@@ -867,7 +867,7 @@ function GraphControls({
   const edgeStyles: EdgeStyle[] = ['bezier', 'step', 'straight']
 
   return (
-    <div className={`absolute top-3 right-3 z-10 flex flex-col items-end gap-2 bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm rounded-lg p-2.5 transition-opacity ${disabled ? 'opacity-40 pointer-events-none' : ''}`}>
+    <div className={`absolute top-3 right-3 z-10 flex flex-col items-end gap-2 bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm rounded-lg p-2.5 transition-opacity ${disabled ? 'opacity-40 pointer-events-none' : ''}`} style={{ minWidth: 220 }}>
       <div className="flex gap-1 items-center">
         {layouts.map((l) => (
           <Tab
@@ -911,23 +911,21 @@ function GraphControls({
             </button>
           </>
         )}
-        <span aria-hidden="true" />
-        <label className="col-span-2 flex items-center gap-2 cursor-pointer select-none">
+        <label className="col-span-3 flex justify-between items-center gap-2 cursor-pointer select-none">
+          <span>Expand inline objects</span>
           <Switch
             checked={expandObjects}
             onChange={(e) => onExpandObjectsChange?.(e.currentTarget.checked)}
-            style={{ transform: 'scale(0.85)', transformOrigin: 'left center', marginRight: -4, cursor: 'pointer' }}
+            style={{ transform: 'scale(0.85)', transformOrigin: 'right center', cursor: 'pointer' }}
           />
-          <span>Expand inline objects</span>
         </label>
-        <span aria-hidden="true" />
-        <label className="col-span-2 flex items-center gap-2 cursor-pointer select-none">
+        <label className="col-span-3 flex justify-between items-center gap-2 cursor-pointer select-none">
+          <span>Expand inline arrays</span>
           <Switch
             checked={expandArrays}
             onChange={(e) => onExpandArraysChange?.(e.currentTarget.checked)}
-            style={{ transform: 'scale(0.85)', transformOrigin: 'left center', marginRight: -4, cursor: 'pointer' }}
+            style={{ transform: 'scale(0.85)', transformOrigin: 'right center', cursor: 'pointer' }}
           />
-          <span>Expand inline arrays</span>
         </label>
         {extraControls}
       </div>
