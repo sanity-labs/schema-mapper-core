@@ -1302,6 +1302,14 @@ function SchemaGraphInner({
   allTypesRef.current = types
   const searchLayoutOverrideRef = useRef<{ layout: LayoutType; spacing: number } | null>(null)
   const preFocusLayoutRef = useRef<{ layout: LayoutType; spacing: number } | null>(null)
+  // Tracks whether the user has explicitly exited the initialFocusState
+  // (Submitted view's stored focus). Once true, the types-change effect
+  // must NOT re-apply initialFocusState as a fallback — otherwise clicking
+  // an algo tab from Submitted-with-focus while showHidden is ON causes
+  // the types reference to churn and the effect re-filters the graph back
+  // to the focus subset. Reset on entering a fresh focus (setFocusState
+  // non-null) or on remount (fresh ref default).
+  const initialFocusExitedRef = useRef(false)
 
   // Cache focus state per schema so switching back restores it
   const focusCacheRef = useRef<Map<string, { typeName: string; depth: 1 | 2 }>>(new Map())
@@ -1446,6 +1454,7 @@ function SchemaGraphInner({
     // crashes the parent dashboard's error handler.
     const submittedFocus =
       !focusState && !curatedActiveRef.current && initialFocusState
+        && !initialFocusExitedRef.current
         && types.some(t => t.name === initialFocusState.typeName)
         ? initialFocusState
         : null
@@ -1670,7 +1679,7 @@ function SchemaGraphInner({
         // and initialFocusState is irrelevant).
         const focusForFilter =
           focusStateRef.current
-            ?? (!curatedActiveRef.current ? initialFocusState : null)
+            ?? (!curatedActiveRef.current && !initialFocusExitedRef.current ? initialFocusState : null)
             ?? null
         let nodesToLayout = currentNodes
         let edgesToSet = currentEdges
@@ -1866,6 +1875,20 @@ function SchemaGraphInner({
     if (focusState) {
       handleExitFocusRef.current?.()
     }
+    // ALSO exit initialFocusState (Submitted view's stored focus) when moving
+    // to any non-'original' layout. Without this, clicking an algo tab from
+    // a Submitted-focused view leaves initialFocusState in place — and the
+    // types-change effect + applyLayout's focusForFilter both fall back to
+    // it, refiltering the graph to the focus subset. Adam's spec: algo tab
+    // from focused Submitted = whole map, no focus.
+    if (newLayout !== 'original' && initialFocusState && !focusState) {
+      initialFocusExitedRef.current = true
+    }
+    // Going BACK to 'original' (Submitted) should re-apply the submission's
+    // original focus, so clear the exit flag.
+    if (newLayout === 'original') {
+      initialFocusExitedRef.current = false
+    }
     // When a curated layout is active, tapping an algo tab (or Submitted) exits
     // the layout and applies the algo. (Simple + expected — users don't want a
     // prompt.)
@@ -1910,14 +1933,10 @@ function SchemaGraphInner({
     if (newLayout !== 'original' && initialFocusState && !focusState) {
       const __displayTypes = getDisplayTypes(null)
     const { nodes: fullNodes, edges: fullEdges } = buildNodesAndEdges(__displayTypes, edgeStyleRef.current, buildGraphExtra(__displayTypes, false))
-      // eslint-disable-next-line no-console
-      console.log('[SG.handleLayoutChange fullGraph]', { newLayout, typesLen: types.length, displayTypesLen: __displayTypes.length, fullNodesLen: fullNodes.length, currentNodesLen: nodes.length, initialFocus: initialFocusState, focusState })
       setNodes(fullNodes)
       setEdges(fullEdges)
       applyLayout(fullNodes, fullEdges, newLayout, spacingMap[newLayout])
     } else {
-      // eslint-disable-next-line no-console
-      console.log('[SG.handleLayoutChange elseBranch]', { newLayout, initialFocus: initialFocusState, focusState, nodesLen: nodes.length, typesLen: types.length })
       applyLayout(nodes as SchemaNode_RF[], edges, newLayout, spacingMap[newLayout])
     }
   }, [nodes, edges, spacingMap, applyLayout, debouncedApplyLayout, initialEdgeStyle, setEdgeStyle, initialFocusState, focusState, types, setNodes, setEdges, curatedActive, onCuratedExitForAlgo])
@@ -1969,6 +1988,10 @@ function SchemaGraphInner({
     }
 
     setFocusState({ typeName, depth })
+    // User is now in a focus they picked — the initialFocusState (Submitted
+    // stored focus) is no longer the fallback. Clear so the types-change
+    // effect doesn't try to re-apply it if types churn.
+    initialFocusExitedRef.current = true
 
     // Get neighbourhood (excluded types omitted unless they are the focus)
     const filteredTypes = getDisplayTypes(typeName, depth)
