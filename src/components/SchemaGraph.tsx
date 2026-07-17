@@ -21,7 +21,7 @@ import ELK from 'elkjs/lib/elk.bundled.js'
 import dagre from '@dagrejs/dagre'
 import '@xyflow/react/dist/style.css'
 
-import { Tab, Button } from '@sanity/ui'
+import { Tab, Button, Switch } from '@sanity/ui'
 import { RxReset } from 'react-icons/rx'
 import { TbFocus2, TbArrowsMaximize } from 'react-icons/tb'
 // GrContract/GrExpand removed — FocusBar now uses TbFocus2/TbArrowsMaximize to match context menu
@@ -912,22 +912,20 @@ function GraphControls({
           </>
         )}
         <span aria-hidden="true" />
-        <label className="col-span-2 flex items-center gap-1 cursor-pointer select-none">
-          <input
-            type="checkbox"
+        <label className="col-span-2 flex items-center gap-2 cursor-pointer select-none">
+          <Switch
             checked={expandObjects}
-            onChange={(e) => onExpandObjectsChange?.(e.target.checked)}
-            className="w-3 h-3 accent-gray-700 cursor-pointer"
+            onChange={(e) => onExpandObjectsChange?.(e.currentTarget.checked)}
+            style={{ transform: 'scale(0.7)', transformOrigin: 'left center', marginRight: -6 }}
           />
           <span>Expand inline objects</span>
         </label>
         <span aria-hidden="true" />
-        <label className="col-span-2 flex items-center gap-1 cursor-pointer select-none">
-          <input
-            type="checkbox"
+        <label className="col-span-2 flex items-center gap-2 cursor-pointer select-none">
+          <Switch
             checked={expandArrays}
-            onChange={(e) => onExpandArraysChange?.(e.target.checked)}
-            className="w-3 h-3 accent-gray-700 cursor-pointer"
+            onChange={(e) => onExpandArraysChange?.(e.currentTarget.checked)}
+            style={{ transform: 'scale(0.7)', transformOrigin: 'left center', marginRight: -6 }}
           />
           <span>Expand inline arrays</span>
         </label>
