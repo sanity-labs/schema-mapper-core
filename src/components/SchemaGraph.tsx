@@ -916,7 +916,7 @@ function GraphControls({
           <Switch
             checked={expandObjects}
             onChange={(e) => onExpandObjectsChange?.(e.currentTarget.checked)}
-            style={{ transform: 'scale(0.7)', transformOrigin: 'left center', marginRight: -6 }}
+            style={{ transform: 'scale(0.85)', transformOrigin: 'left center', marginRight: -4, cursor: 'pointer' }}
           />
           <span>Expand inline objects</span>
         </label>
@@ -925,7 +925,7 @@ function GraphControls({
           <Switch
             checked={expandArrays}
             onChange={(e) => onExpandArraysChange?.(e.currentTarget.checked)}
-            style={{ transform: 'scale(0.7)', transformOrigin: 'left center', marginRight: -6 }}
+            style={{ transform: 'scale(0.85)', transformOrigin: 'left center', marginRight: -4, cursor: 'pointer' }}
           />
           <span>Expand inline arrays</span>
         </label>
