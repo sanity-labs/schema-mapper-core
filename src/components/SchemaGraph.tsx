@@ -1550,9 +1550,20 @@ function SchemaGraphInner({
       preFocusNodesRef.current = null
       preFocusEdgesRef.current = null
     }
+    // Also exit initialFocusState (Submitted view's stored focus) — search
+    // results are drawn from the FULL types set and should not be refiltered
+    // by focus. Without this, downstream effects fall back to initialFocusState
+    // and clip the search result set to the focus neighbourhood.
+    if (query.trim().length > 0) {
+      initialFocusExitedRef.current = true
+    }
     if (!query.trim()) {
       // Restore full graph with user's layout
       searchLayoutOverrideRef.current = null
+      // Re-adopt initialFocusState (Submitted stored focus) if it was set —
+      // clearing the search should return the user to their submission's
+      // original focused view.
+      initialFocusExitedRef.current = false
       const displayTypes = getDisplayTypes(null)
       const { nodes: newNodes, edges: newEdges } = buildNodesAndEdges(
         displayTypes,
@@ -1570,8 +1581,6 @@ function SchemaGraphInner({
       (t.title && t.title.toLowerCase().includes(q)) ||
       t.fields.some(f => f.name.toLowerCase().includes(q))
     )
-    // eslint-disable-next-line no-console
-    console.log('[SG.handleSearchChange]', { query, typesLen: types.length, filteredLen: filtered.length, filteredNames: filtered.map(t => t.name).slice(0, 20), focusState, initialFocusState, initialFocusExited: initialFocusExitedRef.current })
     const { nodes: subsetNodes, edges: subsetEdges } = buildNodesAndEdges(filtered, edgeStyleRef.current, { onCrossDatasetNavigate: onCrossDatasetNavigateRef.current, onMediaLibraryClick: onMediaLibraryClickRef.current, onInaccessibleClick: onInaccessibleClickRef.current, accessibleProjectIds, typeKinds: fullTypeKinds })
     setNodes(subsetNodes)
     setEdges(subsetEdges)
@@ -1652,7 +1661,7 @@ function SchemaGraphInner({
     const myGen = ++applyLayoutGenRef.current
     setIsLayouting(true)
     // eslint-disable-next-line no-console
-    console.log('[SG.applyLayout enter]', { layout, currentNodesLen: currentNodes.length, useCuratedPositions: !!curatedActiveRef.current, focusState: focusStateRef.current, initialFocus: initialFocusState, initialFocusExited: initialFocusExitedRef.current })
+    console.log('[SG.applyLayout enter]', { layout, currentNodesLen: currentNodes.length, useCuratedPositions: !!curatedActiveRef.current })
     try {
       let layoutedNodes: SchemaNode_RF[]
       // Read positions fresh — either from internal focus state via curated
@@ -1742,8 +1751,6 @@ function SchemaGraphInner({
   useEffect(() => {
     if (nodesInitialized && !layoutApplied) {
       const override = searchLayoutOverrideRef.current
-      // eslint-disable-next-line no-console
-      console.log('[SG.layoutEffect]', { override: !!override, layoutOverride: override?.layout, nodesLen: nodes.length, layoutType, layoutApplied, nodesInitialized })
       if (override) {
         applyLayout(nodes as SchemaNode_RF[], edges, override.layout, override.spacing)
       } else {
