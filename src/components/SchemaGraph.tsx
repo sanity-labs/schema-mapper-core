@@ -1570,6 +1570,8 @@ function SchemaGraphInner({
       (t.title && t.title.toLowerCase().includes(q)) ||
       t.fields.some(f => f.name.toLowerCase().includes(q))
     )
+    // eslint-disable-next-line no-console
+    console.log('[SG.handleSearchChange]', { query, typesLen: types.length, filteredLen: filtered.length, filteredNames: filtered.map(t => t.name).slice(0, 20), focusState, initialFocusState, initialFocusExited: initialFocusExitedRef.current })
     const { nodes: subsetNodes, edges: subsetEdges } = buildNodesAndEdges(filtered, edgeStyleRef.current, { onCrossDatasetNavigate: onCrossDatasetNavigateRef.current, onMediaLibraryClick: onMediaLibraryClickRef.current, onInaccessibleClick: onInaccessibleClickRef.current, accessibleProjectIds, typeKinds: fullTypeKinds })
     setNodes(subsetNodes)
     setEdges(subsetEdges)
@@ -1649,6 +1651,8 @@ function SchemaGraphInner({
   ) => {
     const myGen = ++applyLayoutGenRef.current
     setIsLayouting(true)
+    // eslint-disable-next-line no-console
+    console.log('[SG.applyLayout enter]', { layout, currentNodesLen: currentNodes.length, useCuratedPositions: !!curatedActiveRef.current, focusState: focusStateRef.current, initialFocus: initialFocusState, initialFocusExited: initialFocusExitedRef.current })
     try {
       let layoutedNodes: SchemaNode_RF[]
       // Read positions fresh — either from internal focus state via curated
