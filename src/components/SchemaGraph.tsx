@@ -1438,6 +1438,12 @@ function SchemaGraphInner({
     }
     prevTypesKeyRef.current = newKey
 
+    // If a search is active, its handler owns the node set (search filters
+    // against the FULL types list and calls setNodes with the subset). This
+    // effect must not clobber that subset with getDisplayTypes(null) when
+    // types identity churns during search input.
+    if (searchQuery.trim().length > 0) return
+
     // Preserve in-progress focus when:
     //  - Types didn't change at all (exclude-toggle only tweaked what's
     //    rendered inside), OR
@@ -1550,20 +1556,9 @@ function SchemaGraphInner({
       preFocusNodesRef.current = null
       preFocusEdgesRef.current = null
     }
-    // Also exit initialFocusState (Submitted view's stored focus) — search
-    // results are drawn from the FULL types set and should not be refiltered
-    // by focus. Without this, downstream effects fall back to initialFocusState
-    // and clip the search result set to the focus neighbourhood.
-    if (query.trim().length > 0) {
-      initialFocusExitedRef.current = true
-    }
     if (!query.trim()) {
       // Restore full graph with user's layout
       searchLayoutOverrideRef.current = null
-      // Re-adopt initialFocusState (Submitted stored focus) if it was set —
-      // clearing the search should return the user to their submission's
-      // original focused view.
-      initialFocusExitedRef.current = false
       const displayTypes = getDisplayTypes(null)
       const { nodes: newNodes, edges: newEdges } = buildNodesAndEdges(
         displayTypes,
