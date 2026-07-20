@@ -1742,6 +1742,8 @@ function SchemaGraphInner({
   useEffect(() => {
     if (nodesInitialized && !layoutApplied) {
       const override = searchLayoutOverrideRef.current
+      // eslint-disable-next-line no-console
+      console.log('[SG.layoutEffect]', { override: !!override, layoutOverride: override?.layout, nodesLen: nodes.length, layoutType, layoutApplied, nodesInitialized })
       if (override) {
         applyLayout(nodes as SchemaNode_RF[], edges, override.layout, override.spacing)
       } else {
