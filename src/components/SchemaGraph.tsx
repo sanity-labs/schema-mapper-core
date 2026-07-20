@@ -1655,8 +1655,6 @@ function SchemaGraphInner({
   ) => {
     const myGen = ++applyLayoutGenRef.current
     setIsLayouting(true)
-    // eslint-disable-next-line no-console
-    console.log('[SG.applyLayout enter]', { layout, currentNodesLen: currentNodes.length, useCuratedPositions: !!curatedActiveRef.current })
     try {
       let layoutedNodes: SchemaNode_RF[]
       // Read positions fresh — either from internal focus state via curated
